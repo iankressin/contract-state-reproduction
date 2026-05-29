@@ -6,13 +6,12 @@
  *  - MemorySink: collects RowBatches in memory (no reorg) — for tests and bounded backfills,
  *    and works with any async-iterable of `{ data }` (the real stream or a fixture stream).
  *
- * NOTE on the `any` casts: `@subsquid/pipes` is linked from a sibling repo, so the drizzle-orm
- * backing its types is a physically different install than ours (same version). drizzle keys
- * tables/columns by global Symbol.for and only our own db/tables/tx cross the boundary, so this
- * is correct at runtime — the casts only drop the cross-install type identity.
+ * `drizzle-orm` is a single deduped install shared with `@subsquid/pipes` (it declares drizzle-orm
+ * as a peer), so our db/tables/tx and the SDK's Drizzle target share one type identity — no casts
+ * needed at the boundary.
  */
 import { batchForInsert, drizzleTarget } from '@subsquid/pipes/targets/drizzle/node-postgres'
-import type { drizzle } from 'drizzle-orm/node-postgres'
+import { type NodePgDatabase, drizzle } from 'drizzle-orm/node-postgres'
 import { type BlockInput, type RowBatch, type TrackingContext, processBatch } from './pipeline.ts'
 import { allTables, createTablesSql, slotLabel, stateLog, stateValue } from './schema.ts'
 
@@ -24,32 +23,38 @@ export interface StateSink {
 }
 
 export class PostgresSink implements StateSink {
-  constructor(private readonly db: ReturnType<typeof drizzle>) {}
+  constructor(private readonly db: NodePgDatabase) {}
+
+  /** Build the node-postgres Drizzle handle internally — callers never import drizzle-orm. */
+  static fromConnectionString(url: string): PostgresSink {
+    return new PostgresSink(drizzle(url))
+  }
 
   async consume(stream: BlockStream, tracking: TrackingContext): Promise<void> {
-    await (stream as { pipeTo: (t: unknown) => Promise<void> }).pipeTo(
-      drizzleTarget<BlockInput[]>({
-        db: this.db as any,
-        tables: allTables as any,
-        onStart: async ({ db }: { db: any }) => {
-          await db.execute(createTablesSql())
-          // Persist scalar/struct-field slot labels (fixed, known up-front).
-          for (const [slot, fields] of tracking.scalarSlots) {
-            for (const f of fields) {
-              await db.execute(
-                `INSERT INTO slot_label (contract, slot, variable) VALUES ('${tracking.contract}', '${slot}', '${f.variable}') ON CONFLICT DO NOTHING`,
-              )
-            }
+    const target = drizzleTarget<BlockInput[]>({
+      db: this.db,
+      tables: allTables,
+      onStart: async ({ db }) => {
+        await db.execute(createTablesSql())
+        // Persist scalar/struct-field slot labels (fixed, known up-front).
+        for (const [slot, fields] of tracking.scalarSlots) {
+          for (const f of fields) {
+            await db.execute(
+              `INSERT INTO slot_label (contract, slot, variable) VALUES ('${tracking.contract}', '${slot}', '${f.variable}') ON CONFLICT DO NOTHING`,
+            )
           }
-        },
-        onData: async ({ tx, data }: { tx: any; data: BlockInput[] }) => {
-          const { stateRows, labelRows, valueRows } = processBatch(tracking, data)
-          for (const c of batchForInsert(labelRows)) await tx.insert(slotLabel).values(c).onConflictDoNothing()
-          for (const c of batchForInsert(stateRows)) await tx.insert(stateLog).values(c).onConflictDoNothing()
-          for (const c of batchForInsert(valueRows)) await tx.insert(stateValue).values(c).onConflictDoNothing()
-        },
-      }) as any,
-    )
+        }
+      },
+      onData: async ({ tx, data }) => {
+        const { stateRows, labelRows, valueRows } = processBatch(tracking, data)
+        for (const c of batchForInsert(labelRows)) await tx.insert(slotLabel).values(c).onConflictDoNothing()
+        for (const c of batchForInsert(stateRows)) await tx.insert(stateLog).values(c).onConflictDoNothing()
+        for (const c of batchForInsert(valueRows)) await tx.insert(stateValue).values(c).onConflictDoNothing()
+      },
+    })
+
+    if (!stream.pipeTo) throw new Error('PostgresSink needs the Portal stream (no pipeTo on this stream)')
+    await stream.pipeTo(target)
   }
 }
 

@@ -76,17 +76,16 @@ export type ResolvedConfig = JobConfig & {
   portalUrl: string
 }
 
-export function resolveConfig(cfg: JobConfig): ResolvedConfig {
+/**
+ * Validate + normalize a job config, attaching the explicit Portal URL. Internal: the public
+ * way to build this is the `ContractState` fluent builder (which passes the URL from `.onPortal`).
+ */
+export function resolveConfig(cfg: JobConfig, portalUrl: string): ResolvedConfig {
   if (!/^0x[0-9a-fA-F]{40}$/.test(cfg.address)) throw new Error(`Invalid contract address: ${cfg.address}`)
   if (cfg.trackedVariables.length === 0) throw new Error('config.trackedVariables is empty — nothing to track')
   return {
     ...cfg,
     address: cfg.address.toLowerCase() as Hex,
-    portalUrl: process.env.PORTAL_URL ?? 'https://portal.sqd.dev/datasets/ethereum-mainnet',
+    portalUrl,
   }
-}
-
-export async function loadConfig(): Promise<ResolvedConfig> {
-  const mod = await import('../state-repro.config.ts')
-  return resolveConfig(mod.default)
 }

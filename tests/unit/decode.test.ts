@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { type Hex, pad, toHex } from 'viem'
 import { decodeWord } from '../../src/decode.ts'
 

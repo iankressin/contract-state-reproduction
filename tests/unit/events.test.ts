@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import type { Hex } from 'viem'
 import { makeEventReader } from '../../src/events.ts'
 import { APPROVAL_TOPIC, TRANSFER_SIG, TRANSFER_TOPIC, transferLog } from '../fixtures.ts'
