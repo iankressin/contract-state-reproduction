@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { getTableColumns } from 'drizzle-orm'
 import { allTables, createTablesSql, slotLabel, stateLog, stateValue } from '../../src/schema.ts'
 

@@ -9,7 +9,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, resolve as resolvePath } from 'node:path'
-import solc from 'solc'
 import type { Hex } from 'viem'
 import type { ShapeOverride, SourceConfig, TrackedVariable, ValueCategory } from './config.ts'
 import { scalarSlot } from './slots.ts'
@@ -68,8 +67,23 @@ export function abiTypeOf(v: ValueType): string {
 
 // ---------- solc compilation ----------
 
-const BUNDLED_VERSION: string = typeof solc.version === 'function' ? solc.version() : ''
 type SolcLike = { compile: (input: string, opts?: { import?: (p: string) => unknown }) => string }
+type SolcModule = SolcLike & { version?: () => string; setupMethods: (m: unknown) => SolcLike }
+
+/**
+ * Lazy-load the optional `solc` peer. Only the source-derivation path needs it, so inline-shape
+ * users (the common case) never pull it. Throws a crisp, actionable error when it's missing.
+ */
+async function loadSolc(): Promise<SolcModule> {
+  try {
+    return (await import('solc')).default as SolcModule
+  } catch {
+    throw new Error(
+      "Compiling from source requires the optional 'solc' peer dependency. " +
+        'Install it (e.g. `pnpm add solc`) or pin variable shapes inline via `shape` / `scalar()` / `mapping()`.',
+    )
+  }
+}
 
 async function resolveFullVersion(version: string): Promise<string> {
   const v = version.replace(/^v/, '')
@@ -82,9 +96,11 @@ async function resolveFullVersion(version: string): Promise<string> {
 }
 
 async function getCompiler(version?: string): Promise<SolcLike> {
-  if (!version || BUNDLED_VERSION.startsWith(version.replace(/^v/, ''))) return solc as SolcLike
-  // solc.loadRemoteVersion uses Node's Module._compile (absent in bun), so fetch + cache the
-  // soljson bundle ourselves and wrap it with setupMethods (the same low-level API).
+  const solc = await loadSolc()
+  const bundledVersion: string = typeof solc.version === 'function' ? solc.version() : ''
+  if (!version || bundledVersion.startsWith(version.replace(/^v/, ''))) return solc
+  // Fetch + cache the soljson bundle ourselves and wrap it with setupMethods (the low-level API);
+  // this portable path avoids solc.loadRemoteVersion's reliance on Node's Module._compile.
   const full = await resolveFullVersion(version)
   const cacheDir = resolvePath(process.cwd(), '.solc-cache')
   const file = resolvePath(cacheDir, `soljson-${full}.js`)
@@ -92,7 +108,7 @@ async function getCompiler(version?: string): Promise<SolcLike> {
     mkdirSync(cacheDir, { recursive: true })
     writeFileSync(file, await fetch(`https://binaries.soliditylang.org/bin/soljson-${full}.js`).then((r) => r.text()))
   }
-  return solc.setupMethods(createRequire(import.meta.url)(file)) as SolcLike
+  return solc.setupMethods(createRequire(import.meta.url)(file))
 }
 
 export async function compileLayout(src: SourceConfig): Promise<RawLayout> {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import type { Hex } from 'viem'
 import type { TrackedVariable } from '../../src/config.ts'
 import { resolvePlans } from '../../src/layout.ts'

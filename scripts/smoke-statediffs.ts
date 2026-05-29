@@ -4,8 +4,8 @@
  * Streams a small block range for USDC, requests stateDiff fields filtered to the
  * contract address, and prints how many storage-slot diffs arrive (plus a sample).
  *
- *   bun run scripts/smoke-statediffs.ts
- *   FROM=18000000 TO=18000100 bun run scripts/smoke-statediffs.ts
+ *   pnpm smoke
+ *   FROM=18000000 TO=18000100 pnpm smoke
  */
 import { evmPortalStream, evmQuery } from '@subsquid/pipes/evm'
 

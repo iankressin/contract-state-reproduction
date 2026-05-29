@@ -2,7 +2,7 @@
  * VERIFY-2: solc-js layout → decode-plan resolution for scalar, mapping, and nested
  * mapping shapes, plus slot-math cross-checks (offline, no chain).
  *
- *   bun run scripts/verify-layout.ts
+ *   pnpm exec tsx scripts/verify-layout.ts
  */
 import { type Hex, encodeAbiParameters, keccak256 } from 'viem'
 import { resolvePlans } from '../src/layout.ts'

@@ -1,5 +1,7 @@
 node_modules/
 dist/
+coverage/
+*.tsbuildinfo
 .env
 *.log
 .solc-cache/

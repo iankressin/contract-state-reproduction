@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { type Hex, encodeAbiParameters, keccak256, pad, toHex } from 'viem'
 import { encodeKey, keyDisplay, mappingSlot, scalarSlot } from '../../src/slots.ts'
 
