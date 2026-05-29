@@ -1,0 +1,32 @@
+{
+  "name": "state-repro",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "EVM contract historical state reproduction — streams a contract's storage diffs into an append-only Postgres DB (Subsquid Pipes SDK)",
+  "scripts": {
+    "smoke": "bun run scripts/smoke-statediffs.ts",
+    "start": "bun run src/main.ts",
+    "verify": "bun run scripts/verify-values.ts",
+    "test": "bun test tests/unit tests/integration/pipeline.test.ts",
+    "test:cov": "bun test --coverage tests/unit tests/integration/pipeline.test.ts",
+    "test:e2e": "RUN_E2E=1 bun test tests/integration/e2e.test.ts",
+    "typecheck": "tsc --noEmit",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down"
+  },
+  "dependencies": {
+    "@subsquid/pipes": "file:../pipes-sdk/packages/subsquid-pipes",
+    "drizzle-orm": "0.44.7",
+    "pg": "8.16.3",
+    "solc": "^0.8.28",
+    "viem": "2.46.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "8.15.6",
+    "bun-types": "1.3.5",
+    "drizzle-kit": "^0.31.0",
+    "typescript": "5.9.3"
+  }
+}
