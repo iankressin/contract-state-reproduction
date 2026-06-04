@@ -1,0 +1,60 @@
+{
+  "builder.ts": [
+    "config.ts",
+    "indexer.ts",
+    "pipeline.ts",
+    "query.ts",
+    "sink.ts",
+    "track.ts"
+  ],
+  "config.ts": [],
+  "decode.ts": [
+    "layout.ts"
+  ],
+  "events.ts": [],
+  "index.ts": [
+    "builder.ts",
+    "config.ts",
+    "pipeline.ts",
+    "query.ts",
+    "schema.ts",
+    "sink.ts",
+    "track.ts"
+  ],
+  "indexer.ts": [
+    "config.ts",
+    "layout.ts",
+    "pipeline.ts",
+    "query.ts",
+    "sink.ts"
+  ],
+  "layout.ts": [
+    "config.ts",
+    "slots.ts"
+  ],
+  "oracle.ts": [
+    "decode.ts",
+    "layout.ts",
+    "slots.ts"
+  ],
+  "pipeline.ts": [
+    "config.ts",
+    "decode.ts",
+    "events.ts",
+    "layout.ts",
+    "schema.ts",
+    "slots.ts"
+  ],
+  "query.ts": [
+    "pipeline.ts"
+  ],
+  "schema.ts": [],
+  "sink.ts": [
+    "pipeline.ts",
+    "schema.ts"
+  ],
+  "slots.ts": [],
+  "track.ts": [
+    "config.ts"
+  ]
+}
