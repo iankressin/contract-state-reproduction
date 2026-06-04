@@ -6,6 +6,3 @@ coverage/
 *.log
 .solc-cache/
 drizzle/
-# Codebase Context Kit: the structure graph's JSON is committed (so deltas show in PR
-# diffs); the rendered SVG is local-only and regenerated every turn.
-docs/context/structure/graph.svg
