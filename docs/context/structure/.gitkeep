@@ -1,0 +1,2 @@
+# Keeps docs/context/structure/ in version control until graph.json exists.
+# Safe to delete once /map-init has generated graph.json.
