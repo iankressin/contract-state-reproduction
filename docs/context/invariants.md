@@ -59,7 +59,9 @@ out for Z" knowledge that is otherwise lost in agent-driven development.
 - `solc` is an OPTIONAL, lazily-imported peer needed only on the source-derivation path (derived()/fromSource); inline scalar()/mapping() shapes never load it. A non-bundled solcVersion is fetched and cached under ./.solc-cache via setupMethods (not loadRemoteVersion).
 
 ## Workarounds (remove later)
-- stateDiff `prev`/`next` are valid Portal fields missing from the SDK selection type, so query.ts casts the field selection with `as any` — drop the cast once the SDK type includes them.
+- stateDiff `prev`/`next` are valid Portal fields the SDK still omits from `StateDiffFieldSelection` (they live only on the +/-/* output variants, not `StateDiffBaseFields`, and that type isn't re-exported publicly to augment), so query.ts keeps them on the runtime selection but casts the object to a local 4-key `SelectedStateDiffFields` type — this erases the two extra keys from the static type the SDK's `Subset<>` checks (NOT `as any`). Drop the cast once the SDK's selection type includes `prev`/`next`.
+- events.ts decodes a runtime-string ABI, so viem can't derive per-arg primitive types — decoded args are typed `DecodedEventArgs` (= `Record<string, unknown>`) and the decode result is cast through `unknown` to it; viem still validates each value at runtime. Tighten only if `makeEventReader` ever takes a narrowable const ABI.
+- slots.ts `encodeKey` types its params as `AbiParameter[]` (runtime-string `type`), which widens viem's values arg to `readonly unknown[]` so the `unknown` key value passes WITHOUT a cast (the former `value as never` is gone); viem validates the value against `abiType` at runtime.
 
 ## Cross-path consistency
 - oracle.ts verifies against chain using the EXACT same slot derivation (mappingSlot/scalarSlot) and decodeWord as the indexer, so ground-truth checks cannot drift from indexed values — keep them sharing slots.ts/decode.ts.

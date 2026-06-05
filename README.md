@@ -1,5 +1,9 @@
 # @iankressin/contract-state — EVM contract historical state reproduction
 
+[![npm version](https://img.shields.io/npm/v/@iankressin/contract-state)](https://www.npmjs.com/package/@iankressin/contract-state)
+[![CI](https://github.com/iankressin/contract-state-reproduction/actions/workflows/ci.yml/badge.svg)](https://github.com/iankressin/contract-state-reproduction/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
 Reproduces the full historical **storage state** of an Ethereum contract into an
 **append-only Postgres** database (or memory), using the [Subsquid Pipes SDK](https://www.npmjs.com/package/@subsquid/pipes).
 
@@ -7,6 +11,12 @@ Given a contract address, a deployment block, and which variables to track (with
 shapes), it streams every storage-slot change over the contract's life and lets you answer
 **"what was the value of variable/slot X at block N?"** — e.g. any ERC-20 holder's balance, a
 token's total supply, or an allowance, at any past block.
+
+**Works on any EVM chain.** Nothing here is Ethereum-mainnet-specific: storage slots, state
+diffs, and the decode model are identical across EVM networks. You select the chain purely by
+pointing `.onPortal(url)` at that chain's [SQD Portal](https://docs.sqd.ai) dataset URL — e.g.
+`…/datasets/ethereum-mainnet`, `…/datasets/base-mainnet`, `…/datasets/arbitrum-one`. To index a
+different chain, change only that URL; the contract address, shapes, and queries are the same.
 
 ```ts
 import { ContractState, PostgresSink, mapping, scalar } from '@iankressin/contract-state'
@@ -76,8 +86,12 @@ arrays, `string`/`bytes`, nested-struct members, mapping depth > 2) is still cap
 pnpm add @iankressin/contract-state
 ```
 
-Requires **Node ≥ 22.15** (ESM-only). Three dependencies are **optional peers**, installed only for
-the paths that use them:
+This package is **ESM-only** and ships **only** ESM + types (no CommonJS build): import it with
+`import`, from an ESM module (`"type": "module"`, a `.mts` file, or native ESM) on **Node ≥ 22.15**.
+There is no CJS entry, so `require('@iankressin/contract-state')` will not work — see
+[FAQ / Troubleshooting](#faq--troubleshooting).
+
+Three dependencies are **optional peers**, installed only for the paths that use them:
 
 ```bash
 pnpm add drizzle-orm pg   # for PostgresSink (the Postgres target)
@@ -234,10 +248,69 @@ two-key path). `bits` masks the low bits of the decoded value (e.g. `255` for US
 **Sinks:** `PostgresSink.fromConnectionString(url)`, `new PostgresSink(db)`, `new MemorySink()`.
 **Schema (for querying):** `stateLog`, `slotLabel`, `stateValue`, `allTables`, `createTablesSql`.
 
+### Run options, errors, validation & cursors
+
+These are the pieces beyond the core builder. The full surface is in the
+[Typedoc API docs](https://typedoc.org) (`pnpm docs:api` → `docs/api/`); this is the tight version.
+
+**`.run(range?, opts?)` / `.collect(range, opts?)` options** — a `RunOptions` bag, all optional;
+the defaults preserve the resilient behavior:
+
+| Field | Type | Purpose |
+|---|---|---|
+| `strict` | `boolean` | `true` ⇒ a decode anomaly throws `DecodingError`; `false` (default) ⇒ warn + `stats.droppedLogs++` and continue. |
+| `retry` | `RetryPolicy` | Backoff tuning for transient infra faults (`maxAttempts` 5, `baseMs` 250, `maxMs` 30_000, `factor` 2, `jitter` 1; `isRetryable` is default-deny). |
+| `signal` | `AbortSignal` | Cancel an in-flight run; it stops at the next batch boundary and **resolves cleanly** with partial results. |
+| `logger` | `Logger` | Inject a logger (e.g. `createLogger('debug')` or `createLogger('silent')`); defaults to the library's pino logger at `info`. |
+| `onProgress` | `(p: { from; to; rows }) => void` | Per-range progress (after Stats are bumped). |
+| `onError` | `(err: unknown) => void` | Each error encountered (whether or not it's rethrown). |
+| `onReorg` | `(info: ReorgInfo) => void` | A chain reorg was detected and rolled back (PostgresSink only). |
+
+**Typed errors** — every error the library throws on purpose is a `ContractStateError` subclass
+carrying a stable, machine-readable `code` (SCREAMING_SNAKE). Catch the base and branch on `.code`
+(never on message text):
+
+```ts
+import { ContractStateError, ConfigError } from '@iankressin/contract-state'
+
+try {
+  await ContractState.forContract(addr)./* … */.run()
+} catch (e) {
+  if (e instanceof ContractStateError) console.error(e.code, e.message) // e.g. 'CONFIG_NO_PORTAL'
+  else throw e
+}
+```
+
+| Class | Code prefix | When |
+|---|---|---|
+| `ConfigError` | `CONFIG_*` | User-fixable config/input (bad address, missing portal/sink/deploy block, unbounded `collect`, duplicate variable, `keysFrom` arity, solc not installed / version not found, …). |
+| `LayoutError` | `LAYOUT_*` | Storage-layout / solc-compile failures. |
+| `DecodingError` | `DECODE_*` | Decode-time failures (only thrown under `{ strict: true }`; otherwise warned + counted). |
+| `SinkError` | `SINK_*` | Sink/persistence failures (DB write, connection). |
+| `PortalError` | `PORTAL_*` | Failures talking to the Portal / upstream source. |
+
+**Inspect without running** — both are pure (no I/O), so you can validate a builder before a run:
+
+- `.validate(range?)` → `Problem[]` — returns **all** input problems (field-ordered) without throwing
+  or running; pass the same `range` you'll run to validate it too. Empty array ⇒ ready.
+- `.getConfig()` → a read-only `BuilderConfigView` (`id`, `address`, `portalUrl`, `deployBlock`,
+  `trackedVariables` names, `hasSink`) — never throws.
+
+**Cursor (custom sinks)** — for resumable custom sinks, `Cursor` is a tiny load/save high-water-mark
+interface; `MemoryCursor` is an in-memory implementation and `withCursor(stream, resumeAfter)` drops
+already-processed blocks before your sink sees them. See
+[`examples/custom-sink.ts`](./examples/custom-sink.ts) for the full pattern (and its reorg caveat: a
+cursor is a high-water mark, not a reorg-rollback mechanism).
+
+**Logging** — the default `Logger` is pino-backed. Build one with `createLogger(level?, destination?)`
+and inject it via `RunOptions.logger`; `createLogger('silent')` disables all output.
+
 ## Querying
 
 `state_value` is append-only (one row per change), so a value at block N is the latest row at or
-before N. Absent mapping keys use `''`.
+before N. Absent mapping keys use `''`. This temporal/row contract — the sparse history, the
+"latest row ≤ N" rule, the `key1`/`key2 = ''` encoding — is formalized in
+[`docs/semantics.md`](./docs/semantics.md).
 
 ```sql
 -- balance of a holder at block N
@@ -342,3 +415,79 @@ offline is `PostgresSink` (needs Postgres — `RUN_E2E`) and `layout.ts`'s remot
   packed-struct fields (track the struct or a dotted member), and single/nested (≤ 2) value-typed
   mappings. `bytesN` packing assumes offset 0. Dynamic arrays/`bytes`/`string`, nested-struct
   members, and mapping depth > 2 remain raw in `state_log`.
+
+## FAQ / Troubleshooting
+
+**`require('@iankressin/contract-state')` throws (`ERR_REQUIRE_ESM` / "is not a function").**
+This package is **ESM-only** — it ships only an ESM build and has no CommonJS entry. Use `import`
+from an ESM context (`"type": "module"` in your `package.json`, a `.mts` file, or native ESM) on
+**Node ≥ 22.15**. There is no CJS interop to add; `require` cannot load it.
+
+**`Cannot find package 'pg'` / `'drizzle-orm'` (or a missing-module error from `PostgresSink`).**
+`pg` and `drizzle-orm` are **optional peers** loaded only by `PostgresSink`. Install them when you
+use the Postgres target: `pnpm add drizzle-orm pg`. `MemorySink` / `.collect()` need neither.
+
+**`solc` is reported missing.** `solc` is an optional peer needed **only** for source-derived shapes
+(`derived()` + `.fromSource()`). Install it (`pnpm add solc`) for that path, or pin shapes inline with
+`scalar()` / `mapping()` and you never load it. A non-bundled `solcVersion` is fetched and cached under
+`.solc-cache/`.
+
+**A log fails to decode — does the run crash?** It depends on `strict`. By **default** (resilient),
+an undecodable log that matched a tracked event's topic is **warned and counted** (`logger.warn` +
+`stats.droppedLogs++`) and the run continues. Pass `{ strict: true }` to `.run()` / `.collect()` and
+the same anomaly throws a `DecodingError` instead. (A log whose topic matches no tracker is always
+skipped quietly and does **not** count as a dropped log.)
+
+**How do I cancel a run?** Pass an `AbortSignal` via `RunOptions.signal`. The run stops at the next
+batch boundary and **resolves cleanly** (no throw) with whatever was already persisted/collected:
+
+```ts
+const ac = new AbortController()
+const p = ContractState.forContract(addr)./* … */.run(undefined, { signal: ac.signal })
+// later: ac.abort()  →  p resolves normally with partial progress
+```
+
+(On the PostgresSink path, cancellation can be delayed by up to ~300 ms due to the SDK's
+transaction-retry wrapper; it still resolves cleanly.)
+
+**How do I see more (or silence) the logs?** The library logs via [pino](https://getpino.io) at
+`info` by default. Inject your own level/instance with `RunOptions.logger`:
+
+```ts
+import { createLogger } from '@iankressin/contract-state'
+
+await ContractState.forContract(addr)./* … */.run(undefined, { logger: createLogger('debug') })  // verbose
+await ContractState.forContract(addr)./* … */.run(undefined, { logger: createLogger('silent') }) // quiet
+```
+
+**A config mistake throws before anything runs.** Static input is validated up front and the **first**
+problem is thrown as a `ConfigError` with a specific `code` (e.g. `CONFIG_NO_PORTAL`,
+`CONFIG_INVALID_ADDRESS`, `CONFIG_NO_DEPLOY_BLOCK`). To see **all** problems without running, call
+`.validate(range?)` → `Problem[]` (empty ⇒ ready), or `.getConfig()` for a read-only view of the
+builder state. Branch on `e.code`, never on the message text.
+
+## Migrating to 0.2.0
+
+> _Note: `package.json` reads `0.1.0` on `main`; the `0.2.0` version is stamped at release time by Changesets, so this section may describe the next published release rather than the version you have checked out._
+
+0.2.0 is the first hardening release and carries **breaking changes** since 0.1.0. The release
+`CHANGELOG.md` (generated by Changesets at publish time) is the canonical list; the highlights:
+
+- **Package renamed (rescope):** `@subsquid/contract-state` → **`@iankressin/contract-state`**. Update
+  your install and every import specifier. Still ESM-only, Node ≥ 22.15.
+- **Typed errors replace bare `Error`.** Everything the library throws on purpose is now a
+  `ContractStateError` subclass — `ConfigError` / `LayoutError` / `DecodingError` / `SinkError` /
+  `PortalError` — each with a stable `code`. Catch `ContractStateError` and branch on `e.code` instead
+  of matching message strings.
+- **`.run()` / `.collect()` take an options bag.** New signature `.run(range?, opts?)` /
+  `.collect(range, opts?)` with a `RunOptions`: `strict`, `retry`, `signal`, `logger`, `onProgress`,
+  `onError`, `onReorg`. All optional; omitting them preserves the previous resilient behavior.
+- **New inspection methods:** `.validate(range?)` (returns all `Problem`s without running) and
+  `.getConfig()` (read-only `BuilderConfigView`).
+- **Structured logging:** internal `console.log` calls are gone, replaced by an injectable pino
+  `Logger` (`createLogger(level?, destination?)`; default `info`, `'silent'` to disable).
+- **Parameterized slot-label SQL:** `PostgresSink` writes `slot_label` rows via the parameterized
+  Drizzle path (no string-interpolated `INSERT`), so a variable name with special characters can't
+  break or inject the statement. No API change — purely a safety fix.
+
+See [`CHANGELOG.md`](./CHANGELOG.md) for the full, versioned list (generated at release).

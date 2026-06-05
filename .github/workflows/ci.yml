@@ -18,16 +18,19 @@ jobs:
     name: lint · typecheck · test
     runs-on: ubuntu-latest
     steps:
+      # Action majors pinned to releases that run on the Node 24 Actions runtime
+      # (the GitHub-hosted runner default from 2026-06-16): checkout@v6, setup-node@v6,
+      # action-setup@v6. The Node used to RUN the project is set below via node-version.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # pnpm must be installed before setup-node so the pnpm cache can resolve.
       # Version comes from the `packageManager` field in package.json (pnpm@10.17.0).
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm

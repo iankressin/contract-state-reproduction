@@ -1,0 +1,23 @@
+# EditorConfig — https://editorconfig.org
+# Mirrors the repo's Biome formatter (biome.json): 2-space indent, LF, UTF-8,
+# trailing-whitespace trim, final newline.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+max_line_length = 160
+
+# Markdown keeps trailing whitespace meaningful (two trailing spaces = hard line break).
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+# Lockfiles and generated/vendored files are machine-managed — leave them alone.
+[pnpm-lock.yaml]
+indent_size = unset
+insert_final_newline = unset
