@@ -13,8 +13,16 @@ const S = '0xcc33333333333333333333333333333333333333' as Hex
 
 const TRACKED: TrackedVariable[] = [
   { variable: 'totalSupply', shape: { slot: 1, valueType: 'uint256' } },
-  { variable: 'balanceOf', shape: { slot: 2, keyTypes: ['address'], valueType: 'uint256' }, keySources: [{ eventAbi: TRANSFER_SIG, keyTuples: [['from'], ['to']] }] },
-  { variable: 'allowance', shape: { slot: 3, keyTypes: ['address', 'address'], valueType: 'uint256' }, keySources: [{ eventAbi: APPROVAL_SIG, keyTuples: [['owner', 'spender']] }] },
+  {
+    variable: 'balanceOf',
+    shape: { slot: 2, keyTypes: ['address'], valueType: 'uint256' },
+    keySources: [{ eventAbi: TRANSFER_SIG, keyTuples: [['from'], ['to']] }],
+  },
+  {
+    variable: 'allowance',
+    shape: { slot: 3, keyTypes: ['address', 'address'], valueType: 'uint256' },
+    keySources: [{ eventAbi: APPROVAL_SIG, keyTuples: [['owner', 'spender']] }],
+  },
 ]
 
 const balSlot = (h: Hex) => mappingSlot(2, [encodeKey('address', h)])
@@ -35,10 +43,18 @@ describe('buildTrackingContext', () => {
   })
   test('throws when a mapping lacks keySources', async () => {
     const plans = await resolvePlans(undefined, [{ variable: 'balanceOf', shape: { slot: 2, keyTypes: ['address'], valueType: 'uint256' } }])
-    expect(() => buildTrackingContext(CONTRACT, plans, [{ variable: 'balanceOf', shape: { slot: 2, keyTypes: ['address'], valueType: 'uint256' } }])).toThrow(/keySources/)
+    expect(() => buildTrackingContext(CONTRACT, plans, [{ variable: 'balanceOf', shape: { slot: 2, keyTypes: ['address'], valueType: 'uint256' } }])).toThrow(
+      /keySources/,
+    )
   })
   test('throws on key-tuple arity mismatch', async () => {
-    const bad: TrackedVariable[] = [{ variable: 'allowance', shape: { slot: 3, keyTypes: ['address', 'address'], valueType: 'uint256' }, keySources: [{ eventAbi: APPROVAL_SIG, keyTuples: [['owner']] }] }]
+    const bad: TrackedVariable[] = [
+      {
+        variable: 'allowance',
+        shape: { slot: 3, keyTypes: ['address', 'address'], valueType: 'uint256' },
+        keySources: [{ eventAbi: APPROVAL_SIG, keyTuples: [['owner']] }],
+      },
+    ]
     const plans = await resolvePlans(undefined, bad)
     expect(() => buildTrackingContext(CONTRACT, plans, bad)).toThrow(/depth is 2/)
   })
@@ -76,9 +92,7 @@ describe('processBatch', () => {
   })
 
   test('deleted slot (no next) decodes to zero', async () => {
-    const b = processBatch(await ctx(), [
-      block(104, { logs: [transferLog(A, B, 0n)], stateDiffs: [diff(balSlot(B), undefined, { kind: '-' })] }),
-    ])
+    const b = processBatch(await ctx(), [block(104, { logs: [transferLog(A, B, 0n)], stateDiffs: [diff(balSlot(B), undefined, { kind: '-' })] })])
     expect(val(b, 'balanceOf', B)?.valueNum).toBe(0n)
     expect(b.stateRows[0]?.value).toBeNull()
   })

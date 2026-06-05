@@ -151,8 +151,7 @@ export async function compileLayout(src: SourceConfig): Promise<RawLayout> {
   }
   if (!layout) {
     throw new Error(
-      `Contract "${src.contractName}" with a storageLayout not found. ` +
-        `(solc < 0.5.13 cannot emit storageLayout — pin shapes via \`shape\` instead.)`,
+      `Contract "${src.contractName}" with a storageLayout not found. ` + `(solc < 0.5.13 cannot emit storageLayout — pin shapes via \`shape\` instead.)`,
     )
   }
 
@@ -223,9 +222,7 @@ function plansFromLayout(variable: string, raw: RawLayout, decodeBits?: number):
 
   // Struct: expand to one scalar plan per value-type member, named "<var>.<member>".
   if (t?.members) {
-    const plans = t.members
-      .map((m) => memberPlan(`${variable}.${m.label}`, entry.slot, m, raw.types, decodeBits))
-      .filter((p): p is Plan => p !== null)
+    const plans = t.members.map((m) => memberPlan(`${variable}.${m.label}`, entry.slot, m, raw.types, decodeBits)).filter((p): p is Plan => p !== null)
     if (!plans.length) throw new Error(`${variable}: struct has no value-type members to decode`)
     return plans
   }

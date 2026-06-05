@@ -25,10 +25,10 @@ const ABI = [
 const address = '0x6B175474E89094C44Da98b954EedeAC495271d0F'.toLowerCase() as Hex
 const trackedVariables = [
   scalar('totalSupply', { slot: 1, type: 'uint256' }),
-  mapping('balanceOf', { slot: 2, keys: ['address'], value: 'uint256' }).keysFrom(
-    'event Transfer(address indexed src, address indexed dst, uint256 wad)',
-    [['src'], ['dst']],
-  ),
+  mapping('balanceOf', { slot: 2, keys: ['address'], value: 'uint256' }).keysFrom('event Transfer(address indexed src, address indexed dst, uint256 wad)', [
+    ['src'],
+    ['dst'],
+  ]),
   mapping('allowance', { slot: 3, keys: ['address', 'address'], value: 'uint256' }).keysFrom(
     'event Approval(address indexed src, address indexed guy, uint256 wad)',
     [['src', 'guy']],
@@ -65,7 +65,13 @@ if (tsPlan) {
   )
   if (rows[0]) {
     console.log('— totalSupply (scalar) —')
-    await check('totalSupply', tsPlan, [], BigInt(rows[0].v), client.readContract({ address, abi: ABI, functionName: 'totalSupply', blockNumber: BigInt(N) }) as Promise<bigint>)
+    await check(
+      'totalSupply',
+      tsPlan,
+      [],
+      BigInt(rows[0].v),
+      client.readContract({ address, abi: ABI, functionName: 'totalSupply', blockNumber: BigInt(N) }) as Promise<bigint>,
+    )
   }
 }
 
@@ -78,10 +84,19 @@ if (balPlan) {
        ORDER BY key1, "blockNumber" DESC,"transactionIndex" DESC`,
     [address, N],
   )
-  const top = rows.map((r) => ({ holder: r.key1 as Hex, db: BigInt(r.v) })).sort((a, b) => (b.db > a.db ? 1 : -1)).slice(0, 8)
+  const top = rows
+    .map((r) => ({ holder: r.key1 as Hex, db: BigInt(r.v) }))
+    .sort((a, b) => (b.db > a.db ? 1 : -1))
+    .slice(0, 8)
   console.log(`\n— balanceOf (mapping[address]), top ${top.length} of ${rows.length} holders —`)
   for (const { holder, db } of top) {
-    await check(`balanceOf[${holder}]`, balPlan, [holder], db, client.readContract({ address, abi: ABI, functionName: 'balanceOf', args: [holder], blockNumber: BigInt(N) }) as Promise<bigint>)
+    await check(
+      `balanceOf[${holder}]`,
+      balPlan,
+      [holder],
+      db,
+      client.readContract({ address, abi: ABI, functionName: 'balanceOf', args: [holder], blockNumber: BigInt(N) }) as Promise<bigint>,
+    )
   }
 }
 
@@ -94,10 +109,19 @@ if (allowPlan) {
        ORDER BY key1, key2, "blockNumber" DESC,"transactionIndex" DESC`,
     [address, N],
   )
-  const top = rows.map((r) => ({ o: r.key1 as Hex, s: r.key2 as Hex, db: BigInt(r.v) })).sort((a, b) => (b.db > a.db ? 1 : -1)).slice(0, 8)
+  const top = rows
+    .map((r) => ({ o: r.key1 as Hex, s: r.key2 as Hex, db: BigInt(r.v) }))
+    .sort((a, b) => (b.db > a.db ? 1 : -1))
+    .slice(0, 8)
   console.log(`\n— allowance (mapping[address][address]), top ${top.length} of ${rows.length} pairs —`)
   for (const { o, s, db } of top) {
-    await check(`allowance[${o}][${s}]`, allowPlan, [o, s], db, client.readContract({ address, abi: ABI, functionName: 'allowance', args: [o, s], blockNumber: BigInt(N) }) as Promise<bigint>)
+    await check(
+      `allowance[${o}][${s}]`,
+      allowPlan,
+      [o, s],
+      db,
+      client.readContract({ address, abi: ABI, functionName: 'allowance', args: [o, s], blockNumber: BigInt(N) }) as Promise<bigint>,
+    )
   }
 }
 

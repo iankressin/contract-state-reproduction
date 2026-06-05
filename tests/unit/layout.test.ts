@@ -26,7 +26,9 @@ describe('resolvePlans from inline shapes (no compile)', () => {
     expect(plans[1]).toMatchObject({ kind: 'mapping', baseSlot: 3, keyTypes: ['address', 'address'] })
   })
   test('rejects depth > 2 and unsupported value types', async () => {
-    await expect(resolvePlans(undefined, [{ variable: 'x', shape: { slot: 0, keyTypes: ['address', 'address', 'address'], valueType: 'uint256' } }])).rejects.toThrow(/depth/)
+    await expect(
+      resolvePlans(undefined, [{ variable: 'x', shape: { slot: 0, keyTypes: ['address', 'address', 'address'], valueType: 'uint256' } }]),
+    ).rejects.toThrow(/depth/)
     await expect(resolvePlans(undefined, [{ variable: 'x', shape: { slot: 0, valueType: 'string' } }])).rejects.toThrow(/Unsupported value type/)
   })
   test('rejects missing source for a variable without a shape', async () => {
@@ -81,10 +83,7 @@ describe('remote solc (RUN_NET)', () => {
   test.skipIf(!process.env.RUN_NET)(
     'downloads a pinned compiler and derives the layout',
     async () => {
-      const plans = await resolvePlans(
-        { path: 'contracts/TestToken.sol', contractName: 'TestToken', solcVersion: '0.8.20' },
-        [{ variable: '_balances' }],
-      )
+      const plans = await resolvePlans({ path: 'contracts/TestToken.sol', contractName: 'TestToken', solcVersion: '0.8.20' }, [{ variable: '_balances' }])
       expect(plans[0]).toMatchObject({ kind: 'mapping', baseSlot: 0, keyTypes: ['address'] })
     },
     120_000,

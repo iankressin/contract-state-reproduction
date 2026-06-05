@@ -130,13 +130,33 @@ export function processBatch(ctx: TrackingContext, blocks: BlockInput[]): RowBat
       // Scalar field(s) at this slot — a packed slot (e.g. a struct) may host several.
       for (const f of scalarSlots.get(slot) ?? []) {
         const dec = decoders.get(f.variable)!(sd.next)
-        valueRows.push({ contract, variable: f.variable, key1: '', key2: '', valueNum: dec.num, valueHex: dec.hex, blockNumber: block.header.number, transactionIndex: sd.transactionIndex, blockTimestamp: ts })
+        valueRows.push({
+          contract,
+          variable: f.variable,
+          key1: '',
+          key2: '',
+          valueNum: dec.num,
+          valueHex: dec.hex,
+          blockNumber: block.header.number,
+          transactionIndex: sd.transactionIndex,
+          blockTimestamp: ts,
+        })
       }
       // Mapping value at this slot (labeled from an event in this batch).
       const label = labels.get(slot)
       if (label) {
         const dec = decoders.get(label.variable)!(sd.next)
-        valueRows.push({ contract, variable: label.variable, key1: label.key1, key2: label.key2, valueNum: dec.num, valueHex: dec.hex, blockNumber: block.header.number, transactionIndex: sd.transactionIndex, blockTimestamp: ts })
+        valueRows.push({
+          contract,
+          variable: label.variable,
+          key1: label.key1,
+          key2: label.key2,
+          valueNum: dec.num,
+          valueHex: dec.hex,
+          blockNumber: block.header.number,
+          transactionIndex: sd.transactionIndex,
+          blockTimestamp: ts,
+        })
       }
     }
   }

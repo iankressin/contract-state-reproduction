@@ -19,7 +19,11 @@ export async function indexState(config: ResolvedConfig, sink: StateSink, range?
   console.log(`Tracking ${config.address} from block ${r.from}:`)
   for (const p of plans) {
     const v = `${p.value.category}${p.value.bytes * 8}`
-    console.log(p.kind === 'scalar' ? `  - ${p.variable}: scalar ${v} @ slot ${BigInt(p.slot)}` : `  - ${p.variable}: mapping[${p.keyTypes.join('][')}] => ${v} @ baseSlot ${p.baseSlot}`)
+    console.log(
+      p.kind === 'scalar'
+        ? `  - ${p.variable}: scalar ${v} @ slot ${BigInt(p.slot)}`
+        : `  - ${p.variable}: mapping[${p.keyTypes.join('][')}] => ${v} @ baseSlot ${p.baseSlot}`,
+    )
   }
 
   const stream = evmPortalStream({ id: config.id, portal: { url: config.portalUrl }, outputs: buildStateQuery(tracking, r) })

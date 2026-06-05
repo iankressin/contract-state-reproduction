@@ -18,7 +18,11 @@ const byName = Object.fromEntries(plans.map((p) => [p.variable, p]))
 console.log('Resolved plans:')
 for (const p of plans) {
   const v = `${p.value.category}${p.value.bytes * 8}`
-  console.log(p.kind === 'scalar' ? `  ${p.variable}: scalar ${v} @ slot ${BigInt(p.slot)}` : `  ${p.variable}: mapping[${p.keyTypes.join('][')}] => ${v} @ baseSlot ${p.baseSlot}`)
+  console.log(
+    p.kind === 'scalar'
+      ? `  ${p.variable}: scalar ${v} @ slot ${BigInt(p.slot)}`
+      : `  ${p.variable}: mapping[${p.keyTypes.join('][')}] => ${v} @ baseSlot ${p.baseSlot}`,
+  )
 }
 
 function assert(cond: boolean, msg: string) {
@@ -31,11 +35,17 @@ assert(ts.kind === 'scalar' && ts.value.category === 'uint' && ts.value.bytes ==
 
 // Single mapping
 const bal = byName._balances!
-assert(bal.kind === 'mapping' && bal.baseSlot === 0 && JSON.stringify(bal.keyTypes) === '["address"]' && bal.value.bytes === 32, '_balances mapping[address]=>uint256 @ slot 0')
+assert(
+  bal.kind === 'mapping' && bal.baseSlot === 0 && JSON.stringify(bal.keyTypes) === '["address"]' && bal.value.bytes === 32,
+  '_balances mapping[address]=>uint256 @ slot 0',
+)
 
 // Nested mapping
 const allow = byName._allowances!
-assert(allow.kind === 'mapping' && allow.baseSlot === 1 && JSON.stringify(allow.keyTypes) === '["address","address"]', '_allowances mapping[address][address] @ slot 1')
+assert(
+  allow.kind === 'mapping' && allow.baseSlot === 1 && JSON.stringify(allow.keyTypes) === '["address","address"]',
+  '_allowances mapping[address][address] @ slot 1',
+)
 
 // Slot-math cross-checks against canonical keccak256(abi.encode(...)).
 const a = '0x1111111111111111111111111111111111111111' as Hex
