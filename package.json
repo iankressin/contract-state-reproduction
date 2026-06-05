@@ -1,6 +1,6 @@
 {
   "name": "@iankressin/contract-state",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "EVM contract historical state reproduction — streams a contract's storage diffs into an append-only Postgres DB (Subsquid Pipes SDK)",
   "license": "MIT",
   "author": "iankressin",

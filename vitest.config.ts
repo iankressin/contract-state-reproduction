@@ -13,9 +13,9 @@ export default defineConfig({
       provider: 'v8',
       include: ['src'],
       reportsDirectory: './coverage',
-      // Regression-guard floor, set just under the current baseline
-      // (stmts ~83 / branch ~82 / funcs 82.69 / lines ~83). Do not raise above baseline.
-      thresholds: { statements: 80, branches: 78, functions: 78, lines: 80 },
+      // Regression-guard floor, set just under the current achieved coverage
+      // (stmts ~89.4 / branch ~89.8 / funcs ~91.7 / lines ~89.4). Do not raise above baseline.
+      thresholds: { statements: 87, branches: 87, functions: 89, lines: 87 },
     },
   },
 })
