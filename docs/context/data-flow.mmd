@@ -1,11 +1,13 @@
 flowchart TD
     subgraph Authoring["Authoring (build time) — builder.ts / track.ts"]
         A["ContractState.forContract(addr)\n.onPortal .deployedAt .fromSource? .withId? .track(scalar/mapping/derived)"]
-        A --> B[".run(range, opts?: RunOptions) / .collect(range, opts?)\nbuilder.resolve()"]
-        B --> C["resolveConfig()\nvalidate addr regex + non-empty tracked + reject DUPLICATE variable names\n(all faults → ConfigError w/ stable code) → ResolvedConfig"]
+        A --> AV[".validate(range?) → Problem[] (no throw, inspect)\n.getConfig() → BuilderConfigView (no throw, inspect)"]
+        A --> B[".run(range, opts?: RunOptions) / .collect(range, opts?)\nbuilder.resolve(range): portal/deploy fail-fast guards"]
+        B --> C["resolveConfig(cfg, portalUrl, range?)\nEAGER validate via validation.ts (single source of truth):\naddr + portal-URL parseable/http(s) + deployBlock≥0 + range(from≤to, from≥deployBlock) + non-empty/unique tracked\nFIRST Problem → throw ConfigError(message, code) BEFORE any network/DB → ResolvedConfig"]
+        AV -. "same rule set" .-> C
     end
 
-    C --> D["indexState(config, sink, range, opts?)\nindexer.ts — build run-ctx bag ONCE:\nrun = opts ?? {}, logger = run.logger ?? defaultLogger, stats = newStats()\nprogress lines via logger.info (was console.log)"]
+    C --> D["indexState(config, sink, range, opts?)\nindexer.ts — build run-ctx bag ONCE:\nrun = opts ?? {}, logger = run.logger ?? defaultLogger (PINO-backed), stats = newStats()\nprogress lines via logger.info (was console.log)"]
 
     subgraph Engine["Indexing engine — indexer.ts"]
         D --> E["resolvePlans(source, trackedVars)\nlayout.ts"]
@@ -18,7 +20,7 @@ flowchart TD
         H --> I["evmPortalStream({id, portal.url, outputs})\n@subsquid/pipes/evm — backfill then live follow"]
     end
 
-    I -->|"stream of {data: BlockInput[]}"| J{"sink.consume(stream, tracking, options?: ConsumeOptions{run,logger,stats})\nsink.ts"}
+    I -->|"stream of {data: BlockInput[]}"| J{"sink.consume(stream, tracking, options?: ConsumeOptions{run,logger,stats})\nsink.ts — makeDispatch(run,stats,logger) ⇒ {progress,error,reorg}\nper batch: signal check at boundary + dispatch.progress({from,to,rows}) bumps stats.blocks/rows + run.onProgress"}
 
     subgraph Transform["Pure transform — pipeline.ts processBatch(ctx, blocks, options?{strict,logger,stats})"]
         K1["Pass 1: logs → mapByTopic.get(topic0)\nno tracker → skip quietly (non-matching log)"]
@@ -31,8 +33,8 @@ flowchart TD
         K2 --> K3["RowBatch {stateRows, labelRows, valueRows}"]
     end
 
-    J -->|"PostgresSink: withRetry(()=>stream.pipeTo(target), run.retry, {logger,stats,signal})\ncatch → non-ContractStateError wrapped as SinkError(SINK_CONSUME_FAILED)"| T1["onStart: createTablesSql() + INSERT scalar slot_label\nonData: processBatch(…, {strict,logger,stats}) → batchForInsert → INSERT ... ON CONFLICT DO NOTHING\n(reorg snapshots + cursor + tx handled by Drizzle target)"]
-    J -->|"MemorySink: for await (NO retry — restart would dup batches)"| T2["processBatch(…, {strict,logger,stats}) → batches[]  (no reorg; bounded only)"]
+    J -->|"PostgresSink: withRetry(()=>stream.pipeTo(target), run.retry, {logger,stats,signal})\ncatch → isAbort(name==='AbortError') ⇒ RESOLVE CLEANLY (partial); ContractStateError rethrown; else dispatch.error + wrap SinkError(SINK_CONSUME_FAILED)"| T1["onStart: createTablesSql() + PARAMETERIZED slot_label insert (db.insert(slotLabel).values(...).onConflictDoNothing — no string interpolation)\nonData: signal.throwIfAborted() at batch top → processBatch(…, {strict,logger,stats}) → batchForInsert → INSERT ... ON CONFLICT DO NOTHING → dispatch.progress\nonAfterRollback({cursor}): dispatch.reorg({from=lastProcessed,to=cursor.number,depth}) → stats.reorgs++ + run.onReorg\n(reorg snapshots + cursor + tx handled by Drizzle target)"]
+    J -->|"MemorySink: for await (NO retry — restart would dup batches)"| T2["if run.signal.aborted → break (clean resolve, partial)\nprocessBatch(…, {strict,logger,stats}) → batches[] + dispatch.progress  (no reorg; bounded only)"]
     T1 --> K1
     T2 --> K1
 
