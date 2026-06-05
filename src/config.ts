@@ -13,6 +13,8 @@
  */
 import type { Hex } from 'viem'
 import { ConfigError } from './errors.ts'
+import type { BlockRange } from './query.ts'
+import { validateBuilderInput } from './validation.ts'
 
 export type ValueCategory = 'uint' | 'int' | 'address' | 'bool' | 'bytes'
 
@@ -80,18 +82,26 @@ export type ResolvedConfig = JobConfig & {
 /**
  * Validate + normalize a job config, attaching the explicit Portal URL. Internal: the public
  * way to build this is the `ContractState` fluent builder (which passes the URL from `.onPortal`).
+ *
+ * Validation is delegated to `validation.ts` (the single source of truth) so the throw-path enforces
+ * exactly the rules `.validate()` reports: address shape, portal URL parseable/http(s), deploy block
+ * `>= 0`, range (`from <= to`, `from >= deployBlock`), non-empty + unique tracked variables. The
+ * FIRST problem is mapped to a `ConfigError(message, code)` — codes mirror the validator's, so callers
+ * branch on the same stable `.code`. The optional `range` is validated only when supplied.
+ *
+ * @param cfg The assembled job config.
+ * @param portalUrl The explicit Portal dataset URL (from `.onPortal`).
+ * @param range Optional explicit run window to validate against `deployBlock`; omit for backfill.
  */
-export function resolveConfig(cfg: JobConfig, portalUrl: string): ResolvedConfig {
-  if (!/^0x[0-9a-fA-F]{40}$/.test(cfg.address)) throw new ConfigError(`Invalid contract address: ${cfg.address}`, 'CONFIG_INVALID_ADDRESS')
-  if (cfg.trackedVariables.length === 0) throw new ConfigError('config.trackedVariables is empty — nothing to track', 'CONFIG_NO_TRACKED_VARS')
-  // Reject duplicate tracked-variable names: two specs sharing a `variable` would silently overwrite
-  // each other in the pipeline's decoder map (decoders.set(p.variable, …)) — surface it up front.
-  const seen = new Set<string>()
-  for (const v of cfg.trackedVariables) {
-    if (seen.has(v.variable))
-      throw new ConfigError(`Duplicate tracked variable "${v.variable}" — each variable may be tracked only once`, 'CONFIG_DUPLICATE_VARIABLE')
-    seen.add(v.variable)
-  }
+export function resolveConfig(cfg: JobConfig, portalUrl: string, range?: BlockRange): ResolvedConfig {
+  const [problem] = validateBuilderInput({
+    address: cfg.address,
+    portalUrl,
+    deployBlock: cfg.deployBlock,
+    range,
+    trackedVariables: cfg.trackedVariables,
+  })
+  if (problem) throw new ConfigError(problem.message, problem.code)
   return {
     ...cfg,
     address: cfg.address.toLowerCase() as Hex,
