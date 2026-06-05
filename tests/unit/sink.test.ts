@@ -1,10 +1,11 @@
 import { describe, expect, test, vi } from 'vitest'
 import type { Hex } from 'viem'
 import type { TrackedVariable } from '../../src/config.ts'
+import { ConfigError, ContractStateError, DecodingError, SinkError } from '../../src/errors.ts'
 import { resolvePlans } from '../../src/layout.ts'
 import { createLogger, newStats } from '../../src/observability.ts'
 import { type BlockInput, buildTrackingContext } from '../../src/pipeline.ts'
-import { MemorySink } from '../../src/sink.ts'
+import { type BlockStream, MemorySink, PostgresSink, reorgInfoFrom } from '../../src/sink.ts'
 import { encodeKey, mappingSlot } from '../../src/slots.ts'
 import { block, diff, transferLog, word } from '../fixtures.ts'
 
@@ -100,5 +101,87 @@ describe('MemorySink', () => {
     expect(sink.batches).toHaveLength(2)
     expect(onProgress).toHaveBeenCalledTimes(2)
     expect(stats.blocks).toBe(2)
+  })
+})
+
+// PostgresSink's abort-classification + error-wrapping catch, exercised OFFLINE (no real Postgres).
+// `consume` builds the REAL Drizzle target — which only checks for `db.$client` at construction and
+// never touches it unless its own write() drives the stream — so a stub db with `$client: {}` lets the
+// real target build, and a fake `pipeTo` (which ignores the target and rejects) routes us straight
+// into the catch. retry.maxAttempts=1 keeps every case instant (first attempt is also the last → no
+// backoff sleeps; abort/library errors are non-retryable anyway). A no-op async iterator satisfies the
+// `BlockStream` (AsyncIterable) shape; only `pipeTo` is invoked here. The reorg DISPATCH semantics live
+// in the pure `reorgInfoFrom` helper, unit-tested separately below (and end-to-end by the gated e2e).
+describe('PostgresSink.consume (offline: abort classification + error wrapping)', () => {
+  // The real drizzleTarget needs `db.$client` to exist; it is never used because write() never runs.
+  const fakeDb = { $client: {} } as unknown as ConstructorParameters<typeof PostgresSink>[0]
+  const makeSink = () => new PostgresSink(fakeDb)
+
+  /** A BlockStream whose `pipeTo` rejects with `err`; its async iterator yields nothing. */
+  function rejectingStream(err: unknown): BlockStream {
+    return {
+      pipeTo: () => Promise.reject(err),
+      // A no-op async iterator — consume only calls pipeTo on this path, never iterates.
+      async *[Symbol.asyncIterator]() {},
+    }
+  }
+
+  const ctx = { contract: CONTRACT, scalarSlots: new Map(), decoders: new Map(), mapByTopic: new Map() }
+  const opts = (run: Record<string, unknown> = {}) => ({ run: { retry: { maxAttempts: 1 }, ...run }, logger: createLogger('silent'), stats: newStats() })
+
+  test('AbortError from pipeTo resolves CLEANLY (not a throw, not a SinkError)', async () => {
+    const abort = Object.assign(new Error('aborted'), { name: 'AbortError' })
+    await expect(makeSink().consume(rejectingStream(abort), ctx, opts())).resolves.toBeUndefined()
+  })
+
+  test('unknown error from pipeTo rejects with SinkError(SINK_CONSUME_FAILED) wrapping the cause', async () => {
+    const boom = new Error('boom')
+    const onError = vi.fn()
+    const consuming = makeSink().consume(rejectingStream(boom), ctx, opts({ onError }))
+
+    await expect(consuming).rejects.toBeInstanceOf(SinkError)
+    await expect(consuming).rejects.toMatchObject({ code: 'SINK_CONSUME_FAILED', cause: boom })
+    // The unknown-error branch dispatches onError with the ORIGINAL cause before wrapping + rethrowing.
+    expect(onError).toHaveBeenCalledWith(boom)
+  })
+
+  test('a typed ContractStateError (DecodingError/ConfigError) passes through UNWRAPPED', async () => {
+    const decodeErr = new DecodingError('bad', 'DECODE_EVENT_FAILED')
+    const configErr = new ConfigError('bad', 'CONFIG_NO_ADDRESS')
+
+    // The SAME instance is rethrown (NOT wrapped in a SinkError) so callers keep branching on `.code`.
+    await expect(makeSink().consume(rejectingStream(decodeErr), ctx, opts())).rejects.toBe(decodeErr)
+    await expect(makeSink().consume(rejectingStream(configErr), ctx, opts())).rejects.toBe(configErr)
+    // A passthrough is still a ContractStateError, and specifically never a SinkError.
+    await expect(makeSink().consume(rejectingStream(decodeErr), ctx, opts())).rejects.toSatisfy(
+      (e: unknown) => e instanceof ContractStateError && !(e instanceof SinkError),
+    )
+  })
+
+  test('missing pipeTo on the stream throws SinkError(SINK_NO_PIPETO) up front', async () => {
+    // A bare async-iterable with NO pipeTo — the consume guard must fire before any pipe attempt.
+    const noPipe = { async *[Symbol.asyncIterator]() {} } as unknown as BlockStream
+    await expect(makeSink().consume(noPipe, ctx, opts())).rejects.toMatchObject({ code: 'SINK_NO_PIPETO' })
+  })
+})
+
+// The reorg-dispatch semantics, isolated in the pure helper PostgresSink.onAfterRollback delegates to.
+// `to` (the SDK's common-ancestor cursor) is authoritative; `from`/`depth` are best-effort — `from` is
+// the highest block processed when it is strictly ahead of `to`, else it collapses to `to` (depth 0).
+describe('reorgInfoFrom (best-effort reorg shape)', () => {
+  test('lastProcessed ahead of the ancestor → from=lastProcessed, depth=from-to', () => {
+    expect(reorgInfoFrom(105, 100)).toEqual({ from: 105, to: 100, depth: 5 })
+  })
+
+  test('lastProcessed unknown → from collapses to to, depth 0', () => {
+    expect(reorgInfoFrom(undefined, 50)).toEqual({ from: 50, to: 50, depth: 0 })
+  })
+
+  test('lastProcessed equal to the ancestor → from=to, depth 0', () => {
+    expect(reorgInfoFrom(70, 70)).toEqual({ from: 70, to: 70, depth: 0 })
+  })
+
+  test('lastProcessed BEHIND the ancestor (forward jump) → from collapses to to, never negative depth', () => {
+    expect(reorgInfoFrom(40, 90)).toEqual({ from: 90, to: 90, depth: 0 })
   })
 })

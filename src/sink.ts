@@ -13,7 +13,7 @@
 import { batchForInsert, drizzleTarget } from '@subsquid/pipes/targets/drizzle/node-postgres'
 import { type NodePgDatabase, drizzle } from 'drizzle-orm/node-postgres'
 import { ContractStateError, SinkError } from './errors.ts'
-import { type Logger, type Stats, defaultLogger, makeDispatch, newStats } from './observability.ts'
+import { type Logger, type ReorgInfo, type Stats, defaultLogger, makeDispatch, newStats } from './observability.ts'
 import type { RunOptions } from './options.ts'
 import { type BlockInput, type LabelRow, type RowBatch, type TrackingContext, processBatch } from './pipeline.ts'
 import { withRetry } from './resilience.ts'
@@ -35,6 +35,20 @@ function batchProgress(data: BlockInput[], valueRowCount: number): BatchProgress
 
 /** A stream of decoded block batches: any async-iterable yielding `{ data }`. */
 export type BlockStream = AsyncIterable<{ data: BlockInput[] }> & { pipeTo?: (target: unknown) => Promise<void> }
+
+/**
+ * Compute the best-effort {@link ReorgInfo} for a rollback to common-ancestor `toBlock`.
+ *
+ * `to = toBlock` is AUTHORITATIVE (the SDK's `onAfterRollback` cursor). `from` is best-effort: the
+ * highest block the run had processed (`lastProcessedBlock`) when it is strictly above `toBlock`,
+ * otherwise it collapses to `toBlock`; `depth = from - toBlock` (so `0` whenever `from` is unknown or
+ * not ahead of the ancestor). Internal helper — kept off the public surface; not re-exported from
+ * `index.ts`. The SDK never exposes the pre-fork head, so an exact depth is not claimable.
+ */
+export function reorgInfoFrom(lastProcessedBlock: number | undefined, toBlock: number): ReorgInfo {
+  const from = lastProcessedBlock !== undefined && lastProcessedBlock > toBlock ? lastProcessedBlock : toBlock
+  return { from, to: toBlock, depth: from - toBlock }
+}
 
 /** Ambient run context a sink threads into the transform: the run options, where to log, what to count. */
 export interface ConsumeOptions {
@@ -94,10 +108,9 @@ export class PostgresSink implements StateSink {
       // `cursor` (a BlockCursor — only `.number` is meaningful here). `to` is authoritative; `from`
       // is best-effort (the highest block we'd processed) and `depth = from - to`.
       onAfterRollback: ({ cursor }) => {
-        const to = cursor.number
-        const from = lastProcessedBlock !== undefined && lastProcessedBlock > to ? lastProcessedBlock : to
-        dispatch.reorg({ from, to, depth: from - to })
-        lastProcessedBlock = to
+        const info = reorgInfoFrom(lastProcessedBlock, cursor.number)
+        dispatch.reorg(info)
+        lastProcessedBlock = info.to
       },
     })
 
