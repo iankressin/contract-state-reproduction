@@ -1,0 +1,54 @@
+# Publishes the package to npm when a `v*` tag is pushed.
+#
+# Token requirement: publishing needs an `NPM_TOKEN` repository secret (an npm
+# automation/granular token with publish rights for the @iankressin scope).
+# The publish step is a safe no-op when that secret is absent — pushing a `v*`
+# tag without it builds and exits GREEN without publishing. Set the secret to
+# enable real publishing. `id-token: write` is required for npm provenance.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  id-token: write # required for npm provenance attestation
+
+jobs:
+  publish:
+    name: build · publish
+    runs-on: ubuntu-latest
+    steps:
+      # Action majors match CI: checkout@v6, action-setup@v6, setup-node@v6.
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # pnpm must be installed before setup-node so the pnpm cache can resolve.
+      # Version comes from the `packageManager` field in package.json.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "NPM_TOKEN not set — skipping publish (set the secret to enable)"
+            exit 0
+          fi
+          pnpm publish --provenance --access public --no-git-checks
