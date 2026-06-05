@@ -23,6 +23,27 @@ import type { RowBatch } from './pipeline.ts'
 import type { BlockRange } from './query.ts'
 import { MemorySink, type StateSink } from './sink.ts'
 import type { TrackSpec } from './track.ts'
+import { type Problem, validateBuilderInput } from './validation.ts'
+
+/**
+ * A read-only snapshot of a builder's accumulated intent, for inspection WITHOUT running or throwing.
+ * Mirrors what `.run()`/`.collect()` would assemble: the tracked-variable names (not full specs), and
+ * whether a destination sink has been attached. `undefined` fields are simply unset on the builder.
+ */
+export interface BuilderConfigView {
+  /** Resume/cursor id; the explicit `.withId(...)` or `undefined` (defaults to the lowercased address at run time). */
+  readonly id: string | undefined
+  /** Contract address as given to `.forContract(...)` (not lowercased). */
+  readonly address: string
+  /** Portal dataset URL (`.onPortal(...)`), or `undefined` if unset. */
+  readonly portalUrl: string | undefined
+  /** Contract deploy block (`.deployedAt(...)`), or `undefined` if unset. */
+  readonly deployBlock: number | undefined
+  /** Names of the tracked variables, in declaration order. */
+  readonly trackedVariables: readonly string[]
+  /** Whether a destination sink has been attached via `.into(...)`. */
+  readonly hasSink: boolean
+}
 
 /** Entry point for the fluent builder. */
 export class ContractState {
@@ -92,7 +113,7 @@ export class ContractStateBuilder {
    * bounded window.
    */
   async run(range?: BlockRange, opts?: RunOptions): Promise<void> {
-    const config = this.resolve()
+    const config = this.resolve(range)
     if (this._sink == null) throw new ConfigError('ContractState: no sink — call .into(sink) before .run()', 'CONFIG_NO_SINK')
     await indexState(config, this._sink, range, opts)
   }
@@ -106,14 +127,59 @@ export class ContractStateBuilder {
     if (range.to == null) {
       throw new ConfigError('collect() needs a bounded range { from, to }; for live follow use .into(sink).run()', 'CONFIG_UNBOUNDED_COLLECT')
     }
-    const config = this.resolve()
+    const config = this.resolve(range)
     const sink = new MemorySink()
     await indexState(config, sink, range, opts)
     return sink.rows
   }
 
-  /** Build + validate the internal config; reuses `resolveConfig` for address/track checks. */
-  private resolve(): ResolvedConfig {
+  /**
+   * Run every static input rule WITHOUT throwing and return ALL problems found (empty = valid).
+   *
+   * This is the pre-run inspection surface: it never starts a network/DB run and never throws, so a
+   * test or script can assert on the full set of failures at once. It delegates to the same
+   * `validation.ts` rule set that `resolveConfig`'s throw-path uses, over the builder's CURRENT
+   * accumulated state — so a half-built builder reports e.g. a missing portal AND a bad range
+   * together. Pass the same `range` you intend to `.run()`/`.collect()` to have it validated too.
+   *
+   * @param range Optional run window to validate against `deployBlock`; omit to skip range checks.
+   * @returns Every {@link Problem} found, in field order; `[]` when the input is valid.
+   */
+  validate(range?: BlockRange): Problem[] {
+    return validateBuilderInput({
+      address: this._address,
+      portalUrl: this._portalUrl,
+      deployBlock: this._deployBlock,
+      range,
+      trackedVariables: this._specs.map((s) => s._tracked),
+    })
+  }
+
+  /**
+   * Inspect the builder's accumulated intent WITHOUT throwing or running — the address, portal,
+   * deploy block, resume id, tracked-variable names, and whether a sink is attached. Useful for
+   * tests, logging, and debugging a partially-built builder. Unlike `.run()`/`.collect()` this makes
+   * no checks and never throws; missing fields are reported as `undefined`.
+   *
+   * @returns A read-only {@link BuilderConfigView} of the current builder state.
+   */
+  getConfig(): BuilderConfigView {
+    return {
+      id: this._id,
+      address: this._address,
+      portalUrl: this._portalUrl,
+      deployBlock: this._deployBlock,
+      trackedVariables: this._specs.map((s) => s._tracked.variable),
+      hasSink: this._sink != null,
+    }
+  }
+
+  /**
+   * Build + validate the internal config; reuses `resolveConfig` (which routes through `validation.ts`)
+   * for address/portal/deploy/range/track checks. The portal/deploy fail-fast guards stay here so the
+   * builder surfaces its own actionable messages before delegating.
+   */
+  private resolve(range?: BlockRange): ResolvedConfig {
     if (this._portalUrl == null || this._portalUrl === '') {
       throw new ConfigError('ContractState: no portal — call .onPortal(url) before running', 'CONFIG_NO_PORTAL')
     }
@@ -127,6 +193,6 @@ export class ContractStateBuilder {
       ...(this._source ? { source: this._source } : {}),
       trackedVariables: this._specs.map((s) => s._tracked),
     }
-    return resolveConfig(jobConfig, this._portalUrl)
+    return resolveConfig(jobConfig, this._portalUrl, range)
   }
 }

@@ -7,10 +7,17 @@
     "pipeline.ts",
     "query.ts",
     "sink.ts",
-    "track.ts"
+    "track.ts",
+    "validation.ts"
   ],
   "config.ts": [
-    "errors.ts"
+    "errors.ts",
+    "query.ts",
+    "validation.ts"
+  ],
+  "cursor.ts": [
+    "pipeline.ts",
+    "sink.ts"
   ],
   "decode.ts": [
     "layout.ts"
@@ -20,6 +27,7 @@
   "index.ts": [
     "builder.ts",
     "config.ts",
+    "cursor.ts",
     "errors.ts",
     "observability.ts",
     "options.ts",
@@ -28,7 +36,8 @@
     "resilience.ts",
     "schema.ts",
     "sink.ts",
-    "track.ts"
+    "track.ts",
+    "validation.ts"
   ],
   "indexer.ts": [
     "config.ts",
@@ -44,7 +53,9 @@
     "errors.ts",
     "slots.ts"
   ],
-  "observability.ts": [],
+  "observability.ts": [
+    "options.ts"
+  ],
   "options.ts": [
     "observability.ts",
     "resilience.ts"
@@ -83,5 +94,9 @@
   "track.ts": [
     "config.ts",
     "errors.ts"
+  ],
+  "validation.ts": [
+    "config.ts",
+    "query.ts"
   ]
 }

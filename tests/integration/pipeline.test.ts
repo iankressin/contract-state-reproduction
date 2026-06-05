@@ -106,7 +106,9 @@ describe('processBatch', () => {
 describe('decode modes: matched-but-undecodable vs non-matching', () => {
   test('resilient (default): increments droppedLogs, warns, does NOT throw', async () => {
     const stats = newStats()
-    const logger = createLogger('warn')
+    // Route pino at 'warn' to a capture sink (not real stdout) so the dropped-log line doesn't pollute
+    // CI output; the spy still observes the call, so the warn assertion below is unchanged.
+    const logger = createLogger('warn', { write: () => {} })
     const warn = vi.spyOn(logger, 'warn')
     const b = processBatch(await ctx(), [block(200, { logs: [malformedTransferLog()], stateDiffs: [diff(balSlot(A), word(5))] })], { logger, stats })
 

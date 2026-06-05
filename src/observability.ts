@@ -1,13 +1,18 @@
 /**
  * Logging + run-time counters for `@iankressin/contract-state`.
  *
- * Phase 0 ships a tiny, dependency-free console-backed {@link Logger}. The {@link Logger}
- * interface is intentionally pino-shaped so a later phase can swap the DEFAULT implementation to
- * pino without changing any call site. {@link Stats} is a flat counter bag threaded through the
- * pipeline; {@link ReorgInfo} is a placeholder consumed by the reorg-handling phase.
+ * The default {@link Logger} is backed by **pino**: the {@link Logger} interface was authored
+ * pino-shaped (`.level`, `.trace/.debug/.info/.warn/.error` accept `(obj, msg?)` or `(msg)`, and
+ * `'silent'` is a valid level), so swapping the implementation to pino changed no call site. pino is
+ * injectable (a destination stream can be passed for deterministic capture in tests) and silenceable
+ * (`createLogger('silent')` emits nothing). {@link Stats} is a flat counter bag threaded through the
+ * pipeline; {@link makeDispatch} turns batch outcomes into Stats bumps + user {@link RunOptions}
+ * callbacks; {@link ReorgInfo} describes a detected reorg.
  */
+import pino from 'pino'
+import type { RunOptions } from './options.ts'
 
-/** Severity, ordered least→most severe; `'silent'` disables all output. */
+/** Severity, ordered least→most severe; `'silent'` disables all output. Each value is a valid pino level. */
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'silent'
 
 /**
@@ -29,58 +34,27 @@ export interface Logger {
   error(msg: string): void
 }
 
-/** Numeric rank per level; higher = more severe. Used to gate emission. */
-const LEVEL_RANK: Record<LogLevel, number> = {
-  trace: 10,
-  debug: 20,
-  info: 30,
-  warn: 40,
-  error: 50,
-  silent: 60,
-}
-
-/** The five emitting levels, in rank order (excludes `'silent'`). */
-type EmitLevel = Exclude<LogLevel, 'silent'>
-
-/** Maps each emitting level to the `console` method it writes through. */
-const CONSOLE_METHOD: Record<EmitLevel, (...args: unknown[]) => void> = {
-  trace: (...a) => console.debug(...a),
-  debug: (...a) => console.debug(...a),
-  info: (...a) => console.info(...a),
-  warn: (...a) => console.warn(...a),
-  error: (...a) => console.error(...a),
-}
-
 /**
- * Create a small console-backed {@link Logger}.
+ * Create a pino-backed {@link Logger}.
  *
- * A call at level `L` emits only when `rank(L) >= rank(configured)` and the configured level is not
- * `'silent'`. Output routes through the matching `console` method: `trace`/`debug` → `console.debug`,
- * `info` → `console.info`, `warn` → `console.warn`, `error` → `console.error`. Both call forms are
- * supported: `(msg)` and `(obj, msg)` — when an object is given it is passed through to `console`
- * ahead of the (optional) message, matching pino's `(mergingObject, message)` shape.
+ * pino already satisfies the {@link Logger} interface: its instance exposes a settable `.level`, its
+ * level methods accept both `(mergingObject, message)` and `(message)`, and `'silent'` disables all
+ * output. A call at level `L` emits only when `rank(L) >= rank(configured)`; `'silent'` drops
+ * everything. Both call forms are supported.
  *
  * @param level Minimum level to emit; defaults to `'info'`.
+ * @param destination Optional pino destination stream (anything with `write(chunk: string)`), used
+ *   to capture output deterministically in tests. Omit for pino's default (stdout). Additive,
+ *   testability-only parameter — the interface and `level` semantics are unchanged.
  */
-export function createLogger(level: LogLevel = 'info'): Logger {
-  const configuredRank = LEVEL_RANK[level]
-
-  const emit = (at: EmitLevel, objOrMsg: unknown, msg?: string): void => {
-    if (level === 'silent') return
-    if (LEVEL_RANK[at] < configuredRank) return
-    const write = CONSOLE_METHOD[at]
-    if (msg === undefined) write(objOrMsg)
-    else write(objOrMsg, msg)
-  }
-
-  return {
-    level,
-    trace: (objOrMsg: unknown, msg?: string) => emit('trace', objOrMsg, msg),
-    debug: (objOrMsg: unknown, msg?: string) => emit('debug', objOrMsg, msg),
-    info: (objOrMsg: unknown, msg?: string) => emit('info', objOrMsg, msg),
-    warn: (objOrMsg: unknown, msg?: string) => emit('warn', objOrMsg, msg),
-    error: (objOrMsg: unknown, msg?: string) => emit('error', objOrMsg, msg),
-  }
+export function createLogger(level: LogLevel = 'info', destination?: { write(msg: string): void }): Logger {
+  // pino's second arg is an optional destination stream; passing one lets tests collect chunks
+  // without touching real stdout. The returned instance structurally IS a Logger (the interface was
+  // authored pino-shaped); the only type gap is pino typing `.level` as the WIDER
+  // LevelWithSilentOrString. Since we only ever pass a LogLevel in, the runtime `.level` is always a
+  // LogLevel — narrow it back via a single boundary cast.
+  const instance = destination ? pino({ level }, destination) : pino({ level })
+  return instance as unknown as Logger
 }
 
 /** Process-wide default logger at `'info'`. */
@@ -94,22 +68,74 @@ export interface Stats {
   retries: number
   /** Number of operations that exhausted all retry attempts and ultimately failed. */
   retriesExhausted: number
+  /** Number of blocks whose batches were processed (sum of `to - from + 1` per progress event). */
+  blocks: number
+  /** Number of decoded value rows produced across all processed batches. */
+  rows: number
+  /** Number of chain reorganizations observed. */
+  reorgs: number
 }
 
 /** Create a fresh {@link Stats} with all counters at zero. */
 export function newStats(): Stats {
-  return { droppedLogs: 0, retries: 0, retriesExhausted: 0 }
+  return { droppedLogs: 0, retries: 0, retriesExhausted: 0, blocks: 0, rows: 0, reorgs: 0 }
 }
 
 /**
- * Description of a detected chain reorganization. Placeholder for the reorg-handling phase;
- * defined now so the {@link Logger}/options surface is write-once.
+ * Description of a detected chain reorganization.
+ *
+ * `to` is the new common-ancestor height the chain rolled back to (authoritative). `from` and
+ * `depth` are best-effort: `from` is the highest block the run had processed before the fork and
+ * `depth` is `from - to`. When the pre-fork height is unknown they collapse to `to`/`0`.
  */
 export interface ReorgInfo {
-  /** Block height the chain rolled back from. */
+  /** Block height the chain rolled back from (best-effort: highest processed before the fork). */
   from: number
-  /** Block height the chain rolled back to (the new common ancestor). */
+  /** Block height the chain rolled back to (the new common ancestor; authoritative). */
   to: number
-  /** Number of blocks rolled back (`from - to`). */
+  /** Number of blocks rolled back (`from - to`; best-effort, `0` when `from` is unknown). */
   depth: number
+}
+
+/**
+ * Bundle of dispatchers that fan a batch outcome out to {@link Stats} counters AND the user's
+ * {@link RunOptions} lifecycle callbacks. One place owns "bump the counter, then call the hook", so
+ * sinks stay thin and Stats can never drift from what the callbacks report.
+ */
+export interface Dispatch {
+  /**
+   * Record a processed range: add `to - from + 1` to `stats.blocks`, add `rows` to `stats.rows`,
+   * then invoke `run.onProgress` (if provided) with the same payload.
+   */
+  progress(p: { from: number; to: number; rows: number }): void
+  /** Forward an error to `run.onError` (if provided). Does not throw; never swallows the error itself. */
+  error(err: unknown): void
+  /** Record a reorg: increment `stats.reorgs`, then invoke `run.onReorg` (if provided) with `info`. */
+  reorg(info: ReorgInfo): void
+}
+
+/**
+ * Build the {@link Dispatch} bundle that wires a sink's per-batch outcomes into {@link Stats} and the
+ * caller's {@link RunOptions} callbacks. Pure factory: it captures `run`/`stats`/`logger` and returns
+ * closures; it performs no I/O of its own beyond invoking the (optional) user callbacks.
+ *
+ * @param run The run options carrying the optional `onProgress`/`onError`/`onReorg` callbacks.
+ * @param stats The counter bag to bump (mutated in place).
+ * @param _logger The run logger (reserved for future dispatch-level logging; unused today).
+ */
+export function makeDispatch(run: RunOptions, stats: Stats, _logger: Logger): Dispatch {
+  return {
+    progress: (p) => {
+      stats.blocks += p.to - p.from + 1
+      stats.rows += p.rows
+      run.onProgress?.(p)
+    },
+    error: (err) => {
+      run.onError?.(err)
+    },
+    reorg: (info) => {
+      stats.reorgs++
+      run.onReorg?.(info)
+    },
+  }
 }

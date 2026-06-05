@@ -28,11 +28,12 @@ describe('resolveConfig', () => {
     expect(() => resolveConfig({ ...base, trackedVariables: [] }, PORTAL)).toThrow(/nothing to track/)
   })
   test('rejects duplicate tracked-variable names (would silently overwrite the decoder map)', () => {
+    const ks = [{ eventAbi: 'event Transfer(address indexed from, address indexed to, uint256 value)', keyTuples: [['from']] }]
     const dup: JobConfig = {
       ...base,
       trackedVariables: [
-        { variable: 'balanceOf', shape: { slot: 2, keyTypes: ['address'], valueType: 'uint256' } },
-        { variable: 'balanceOf', shape: { slot: 9, keyTypes: ['address'], valueType: 'uint128' } },
+        { variable: 'balanceOf', shape: { slot: 2, keyTypes: ['address'], valueType: 'uint256' }, keySources: ks },
+        { variable: 'balanceOf', shape: { slot: 9, keyTypes: ['address'], valueType: 'uint128' }, keySources: ks },
       ],
     }
     expect(() => resolveConfig(dup, PORTAL)).toThrow(ConfigError)
@@ -107,5 +108,95 @@ describe('ContractState builder validation (fails fast, before any network)', ()
   })
   test('collect() without a bounded `to` rejects', async () => {
     await expect(ContractState.forContract(ADDR).onPortal(PORTAL).deployedAt(1).track(track()).collect({ from: 1 })).rejects.toThrow(/bounded range/)
+  })
+})
+
+describe('builder .validate() — structured problems, no throw', () => {
+  const track = () => scalar('totalSupply', { slot: 1, type: 'uint256' })
+
+  test('returns [] for a fully valid builder', () => {
+    const problems = ContractState.forContract(ADDR).onPortal(PORTAL).deployedAt(1).track(track()).validate()
+    expect(problems).toEqual([])
+  })
+
+  test('reports ALL problems at once for a half-built builder (missing portal + bad range)', () => {
+    // No portal set, and from < deployBlock — both should surface, in field order, without throwing.
+    const problems = ContractState.forContract(ADDR).deployedAt(100).track(track()).validate({ from: 50, to: 60 })
+    const codes = problems.map((p) => p.code)
+    expect(codes).toContain('CONFIG_NO_PORTAL')
+    expect(codes).toContain('CONFIG_INVALID_RANGE')
+    // Portal (field order) comes before range.
+    expect(codes.indexOf('CONFIG_NO_PORTAL')).toBeLessThan(codes.indexOf('CONFIG_INVALID_RANGE'))
+  })
+
+  test('validates the supplied range against deployBlock (from > to)', () => {
+    const problems = ContractState.forContract(ADDR).onPortal(PORTAL).deployedAt(1).track(track()).validate({ from: 10, to: 5 })
+    expect(problems.map((p) => p.code)).toContain('CONFIG_INVALID_RANGE')
+  })
+
+  test('reports an invalid address', () => {
+    const problems = ContractState.forContract('0x123').onPortal(PORTAL).deployedAt(1).track(track()).validate()
+    expect(problems[0]?.code).toBe('CONFIG_INVALID_ADDRESS')
+  })
+})
+
+describe('builder .getConfig() — inspect without throwing', () => {
+  test('returns the assembled shape for a complete builder', () => {
+    const sink = new MemorySink()
+    const cfg = ContractState.forContract(ADDR)
+      .onPortal(PORTAL)
+      .deployedAt(42)
+      .withId('dai-balances')
+      .track(scalar('totalSupply', { slot: 1, type: 'uint256' }), mapping('balanceOf', { slot: 2, keys: ['address'], value: 'uint256' }))
+      .into(sink)
+      .getConfig()
+    expect(cfg).toEqual({
+      id: 'dai-balances',
+      address: ADDR,
+      portalUrl: PORTAL,
+      deployBlock: 42,
+      trackedVariables: ['totalSupply', 'balanceOf'],
+      hasSink: true,
+    })
+  })
+
+  test('reflects a partially-built builder without throwing (unset fields are undefined, hasSink false)', () => {
+    const cfg = ContractState.forContract(ADDR).getConfig()
+    expect(cfg).toEqual({
+      id: undefined,
+      address: ADDR,
+      portalUrl: undefined,
+      deployBlock: undefined,
+      trackedVariables: [],
+      hasSink: false,
+    })
+  })
+})
+
+describe('eager validation (throw-path via validation.ts)', () => {
+  const track = () => scalar('totalSupply', { slot: 1, type: 'uint256' })
+
+  test('an invalid portal URL throws ConfigError(CONFIG_INVALID_PORTAL_URL) at run time', async () => {
+    await expect(
+      ContractState.forContract(ADDR).onPortal('not a url').deployedAt(1).track(track()).into(new MemorySink()).run({ from: 1, to: 2 }),
+    ).rejects.toThrow(expect.objectContaining({ code: 'CONFIG_INVALID_PORTAL_URL' }))
+  })
+
+  test('a negative deploy block throws ConfigError(CONFIG_INVALID_DEPLOY_BLOCK)', async () => {
+    await expect(ContractState.forContract(ADDR).onPortal(PORTAL).deployedAt(-5).track(track()).into(new MemorySink()).run({ from: 1, to: 2 })).rejects.toThrow(
+      expect.objectContaining({ code: 'CONFIG_INVALID_DEPLOY_BLOCK' }),
+    )
+  })
+
+  test('from > to throws ConfigError(CONFIG_INVALID_RANGE)', async () => {
+    await expect(ContractState.forContract(ADDR).onPortal(PORTAL).deployedAt(1).track(track()).into(new MemorySink()).run({ from: 9, to: 2 })).rejects.toThrow(
+      expect.objectContaining({ code: 'CONFIG_INVALID_RANGE' }),
+    )
+  })
+
+  test('from < deployBlock throws ConfigError(CONFIG_INVALID_RANGE)', async () => {
+    await expect(
+      ContractState.forContract(ADDR).onPortal(PORTAL).deployedAt(100).track(track()).into(new MemorySink()).collect({ from: 50, to: 60 }),
+    ).rejects.toThrow(expect.objectContaining({ code: 'CONFIG_INVALID_RANGE' }))
   })
 })

@@ -5,6 +5,7 @@
 flowchart LR
     builder_ts["builder.ts"]
     config_ts["config.ts"]
+    cursor_ts["cursor.ts"]
     decode_ts["decode.ts"]
     errors_ts["errors.ts"]
     events_ts["events.ts"]
@@ -21,6 +22,7 @@ flowchart LR
     sink_ts["sink.ts"]
     slots_ts["slots.ts"]
     track_ts["track.ts"]
+    validation_ts["validation.ts"]
     builder_ts --> config_ts
     builder_ts --> errors_ts
     builder_ts --> indexer_ts
@@ -29,10 +31,16 @@ flowchart LR
     builder_ts --> query_ts
     builder_ts --> sink_ts
     builder_ts --> track_ts
+    builder_ts --> validation_ts
     config_ts --> errors_ts
+    config_ts --> query_ts
+    config_ts --> validation_ts
+    cursor_ts --> pipeline_ts
+    cursor_ts --> sink_ts
     decode_ts --> layout_ts
     index_ts --> builder_ts
     index_ts --> config_ts
+    index_ts --> cursor_ts
     index_ts --> errors_ts
     index_ts --> observability_ts
     index_ts --> options_ts
@@ -42,6 +50,7 @@ flowchart LR
     index_ts --> schema_ts
     index_ts --> sink_ts
     index_ts --> track_ts
+    index_ts --> validation_ts
     indexer_ts --> config_ts
     indexer_ts --> layout_ts
     indexer_ts --> observability_ts
@@ -52,6 +61,7 @@ flowchart LR
     layout_ts --> config_ts
     layout_ts --> errors_ts
     layout_ts --> slots_ts
+    observability_ts --> options_ts
     options_ts --> observability_ts
     options_ts --> resilience_ts
     oracle_ts --> decode_ts
@@ -75,3 +85,5 @@ flowchart LR
     sink_ts --> schema_ts
     track_ts --> config_ts
     track_ts --> errors_ts
+    validation_ts --> config_ts
+    validation_ts --> query_ts
