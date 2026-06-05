@@ -8,6 +8,7 @@
  *   derived(v).keysFrom(…)                                -> { variable, keySources }   (no shape -> solc-derived)
  */
 import type { KeySource, TrackedVariable } from './config.ts'
+import { ConfigError } from './errors.ts'
 
 /** Inline shape of a scalar (or a packed struct field via a dotted `variable`, e.g. 'slot0.tick'). */
 export type ScalarShape = {
@@ -56,7 +57,7 @@ export class TrackSpec {
    */
   keysFrom(event: string, at: string[][]): this {
     if (!this._allowsKeys) {
-      throw new Error(`${this._tracked.variable}: scalar()/struct fields take no keysFrom — only mapping()/derived() do`)
+      throw new ConfigError(`${this._tracked.variable}: scalar()/struct fields take no keysFrom — only mapping()/derived() do`, 'CONFIG_KEYSFROM_ON_SCALAR')
     }
     ;(this._tracked.keySources ??= []).push({ eventAbi: event, keyTuples: at } satisfies KeySource)
     return this

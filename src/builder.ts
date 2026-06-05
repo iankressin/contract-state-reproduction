@@ -16,7 +16,9 @@
  *     .run({ to: 8_932_674 })
  */
 import { type JobConfig, type ResolvedConfig, resolveConfig, type SourceConfig } from './config.ts'
+import { ConfigError } from './errors.ts'
 import { indexState } from './indexer.ts'
+import type { RunOptions } from './options.ts'
 import type { RowBatch } from './pipeline.ts'
 import type { BlockRange } from './query.ts'
 import { MemorySink, type StateSink } from './sink.ts'
@@ -89,10 +91,10 @@ export class ContractStateBuilder {
    * `PostgresSink` — it rolls back reorgs and persists a cursor). With `{ from, to }`: index a
    * bounded window.
    */
-  async run(range?: BlockRange): Promise<void> {
+  async run(range?: BlockRange, opts?: RunOptions): Promise<void> {
     const config = this.resolve()
-    if (this._sink == null) throw new Error('ContractState: no sink — call .into(sink) before .run()')
-    await indexState(config, this._sink, range)
+    if (this._sink == null) throw new ConfigError('ContractState: no sink — call .into(sink) before .run()', 'CONFIG_NO_SINK')
+    await indexState(config, this._sink, range, opts)
   }
 
   /**
@@ -100,23 +102,23 @@ export class ContractStateBuilder {
    * scripts, and one-off reconstructions — no database, no Drizzle. `to` is required: `MemorySink`
    * does no reorg rollback and buffers everything, so it must not follow the chain unbounded.
    */
-  async collect(range: BlockRange): Promise<RowBatch> {
+  async collect(range: BlockRange, opts?: RunOptions): Promise<RowBatch> {
     if (range.to == null) {
-      throw new Error('collect() needs a bounded range { from, to }; for live follow use .into(sink).run()')
+      throw new ConfigError('collect() needs a bounded range { from, to }; for live follow use .into(sink).run()', 'CONFIG_UNBOUNDED_COLLECT')
     }
     const config = this.resolve()
     const sink = new MemorySink()
-    await indexState(config, sink, range)
+    await indexState(config, sink, range, opts)
     return sink.rows
   }
 
   /** Build + validate the internal config; reuses `resolveConfig` for address/track checks. */
   private resolve(): ResolvedConfig {
     if (this._portalUrl == null || this._portalUrl === '') {
-      throw new Error('ContractState: no portal — call .onPortal(url) before running')
+      throw new ConfigError('ContractState: no portal — call .onPortal(url) before running', 'CONFIG_NO_PORTAL')
     }
     if (this._deployBlock == null) {
-      throw new Error('ContractState: no deploy block — call .deployedAt(block) before running')
+      throw new ConfigError('ContractState: no deploy block — call .deployedAt(block) before running', 'CONFIG_NO_DEPLOY_BLOCK')
     }
     const jobConfig: JobConfig = {
       id: this._id ?? this._address.toLowerCase(),

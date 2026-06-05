@@ -33,6 +33,15 @@ export type {
 // ── Schema (for querying Postgres directly) ──
 export { allTables, createTablesSql, slotLabel, stateLog, stateValue } from './schema.ts'
 
+// ── Errors (catch a ContractStateError, branch on `.code`) ──
+export { ConfigError, ContractStateError, DecodingError, LayoutError, PortalError, SinkError } from './errors.ts'
+
+// ── Run-time behavior (strict/retry/abort, logging, counters) ──
+export type { ConsumeOptions } from './sink.ts'
+export type { Logger, LogLevel, Stats } from './observability.ts'
+export type { RunOptions } from './options.ts'
+export type { RetryPolicy } from './resilience.ts'
+
 // ── Shared types ──
 export type { SourceConfig, ValueCategory } from './config.ts'
 export type { BlockRange } from './query.ts'
