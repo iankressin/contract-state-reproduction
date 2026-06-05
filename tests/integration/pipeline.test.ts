@@ -1,10 +1,12 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import type { Hex } from 'viem'
 import type { TrackedVariable } from '../../src/config.ts'
+import { DecodingError } from '../../src/errors.ts'
 import { resolvePlans } from '../../src/layout.ts'
+import { createLogger, newStats } from '../../src/observability.ts'
 import { type RowBatch, buildTrackingContext, processBatch } from '../../src/pipeline.ts'
 import { encodeKey, mappingSlot, scalarSlot } from '../../src/slots.ts'
-import { APPROVAL_SIG, TRANSFER_SIG, TRANSFER_TOPIC, approvalLog, block, diff, transferLog, word } from '../fixtures.ts'
+import { APPROVAL_SIG, TRANSFER_SIG, TRANSFER_TOPIC, approvalLog, block, diff, malformedTransferLog, transferLog, unrelatedLog, word } from '../fixtures.ts'
 
 const CONTRACT = '0x6b175474e89094c44da98b954eedeac495271d0f' as Hex
 const A = '0xaa11111111111111111111111111111111111111' as Hex
@@ -95,5 +97,54 @@ describe('processBatch', () => {
     const b = processBatch(await ctx(), [block(104, { logs: [transferLog(A, B, 0n)], stateDiffs: [diff(balSlot(B), undefined, { kind: '-' })] })])
     expect(val(b, 'balanceOf', B)?.valueNum).toBe(0n)
     expect(b.stateRows[0]?.value).toBeNull()
+  })
+})
+
+// Task 3 — the headline correctness fix: a log whose topic0 MATCHED a tracked event but then failed
+// to decode must be SURFACED (strict → throw, resilient → warn + droppedLogs++), never silently
+// dropped; a genuinely unrelated log is still skipped quietly with no droppedLogs.
+describe('decode modes: matched-but-undecodable vs non-matching', () => {
+  test('resilient (default): increments droppedLogs, warns, does NOT throw', async () => {
+    const stats = newStats()
+    const logger = createLogger('warn')
+    const warn = vi.spyOn(logger, 'warn')
+    const b = processBatch(await ctx(), [block(200, { logs: [malformedTransferLog()], stateDiffs: [diff(balSlot(A), word(5))] })], { logger, stats })
+
+    expect(stats.droppedLogs).toBe(1)
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ variable: 'balanceOf', topic0: TRANSFER_TOPIC }), 'dropped undecodable event log')
+    // The malformed log produced no label, so the diff stays raw-only (no decoded mapping value).
+    expect(b.stateRows).toHaveLength(1)
+    expect(b.valueRows).toHaveLength(0)
+  })
+
+  test('resilient with no options bag still does not throw (back-compat 2-arg call)', async () => {
+    const c = await ctx()
+    expect(() => processBatch(c, [block(201, { logs: [malformedTransferLog()] })])).not.toThrow()
+  })
+
+  test('strict: throws DecodingError(DECODE_EVENT_FAILED) naming the variable', async () => {
+    const c = await ctx()
+    const stats = newStats()
+    expect(() => processBatch(c, [block(202, { logs: [malformedTransferLog()] })], { strict: true, stats })).toThrow(DecodingError)
+    try {
+      processBatch(c, [block(203, { logs: [malformedTransferLog()] })], { strict: true })
+      throw new Error('expected throw')
+    } catch (e) {
+      expect(e).toBeInstanceOf(DecodingError)
+      expect((e as DecodingError).code).toBe('DECODE_EVENT_FAILED')
+      expect((e as DecodingError).message).toMatch(/balanceOf/)
+    }
+    // strict throws on the first corrupt log → never reaches the counter.
+    expect(stats.droppedLogs).toBe(0)
+  })
+
+  test('a genuinely non-matching log is skipped with NO droppedLogs (strict or resilient)', async () => {
+    const stats = newStats()
+    const c = await ctx()
+    // resilient
+    expect(() => processBatch(c, [block(204, { logs: [unrelatedLog()] })], { stats })).not.toThrow()
+    // strict — an unrelated topic0 is never even looked up as a tracked event, so it must not throw
+    expect(() => processBatch(c, [block(205, { logs: [unrelatedLog()] })], { strict: true, stats })).not.toThrow()
+    expect(stats.droppedLogs).toBe(0)
   })
 })

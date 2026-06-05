@@ -6,8 +6,10 @@
 import type { Hex } from 'viem'
 import type { TrackedVariable } from './config.ts'
 import { type Decoded, decodeWord } from './decode.ts'
+import { ConfigError, DecodingError } from './errors.ts'
 import { type EventReader, makeEventReader } from './events.ts'
 import type { Plan } from './layout.ts'
+import type { Logger, Stats } from './observability.ts'
 import { slotLabel, stateLog, stateValue } from './schema.ts'
 import { encodeKey, keyDisplay, mappingSlot } from './slots.ts'
 
@@ -52,12 +54,15 @@ export function buildTrackingContext(contract: Hex, plans: Plan[], trackedVariab
   for (const v of trackedVariables) {
     const plan = plans.find((p) => p.variable === v.variable)
     if (!plan || plan.kind !== 'mapping') continue
-    if (!v.keySources?.length) throw new Error(`mapping "${v.variable}" needs keySources (events to discover its keys)`)
+    if (!v.keySources?.length) throw new ConfigError(`mapping "${v.variable}" needs keySources (events to discover its keys)`, 'CONFIG_MISSING_KEY_SOURCES')
     for (const ks of v.keySources) {
       const reader = makeEventReader(ks.eventAbi)
       for (const tuple of ks.keyTuples) {
         if (tuple.length !== plan.keyTypes.length) {
-          throw new Error(`${v.variable}: key tuple ${JSON.stringify(tuple)} has ${tuple.length} args but mapping depth is ${plan.keyTypes.length}`)
+          throw new ConfigError(
+            `${v.variable}: key tuple ${JSON.stringify(tuple)} has ${tuple.length} args but mapping depth is ${plan.keyTypes.length}`,
+            'CONFIG_KEY_TUPLE_ARITY',
+          )
         }
       }
       const list = mapByTopic.get(reader.topic0) ?? []
@@ -69,8 +74,14 @@ export function buildTrackingContext(contract: Hex, plans: Plan[], trackedVariab
   return { contract, scalarSlots, decoders, mapByTopic }
 }
 
-/** Transform a batch of blocks into raw + decoded rows. */
-export function processBatch(ctx: TrackingContext, blocks: BlockInput[]): RowBatch {
+/**
+ * Transform a batch of blocks into raw + decoded rows.
+ *
+ * `options` carries the strict/resilient decode policy plus the logger/stats sink. All fields are
+ * optional so existing 2-arg `processBatch(ctx, blocks)` callers keep working (defaulting to today's
+ * resilient behavior with no logging/counting).
+ */
+export function processBatch(ctx: TrackingContext, blocks: BlockInput[], options?: { strict?: boolean; logger?: Logger; stats?: Stats }): RowBatch {
   const { contract, scalarSlots, decoders, mapByTopic } = ctx
   const stateRows: StateRow[] = []
   const labelRows: LabelRow[] = []
@@ -81,10 +92,28 @@ export function processBatch(ctx: TrackingContext, blocks: BlockInput[]): RowBat
   for (const block of blocks) {
     for (const log of block.logs) {
       const trackers = mapByTopic.get((log.topics[0] ?? '0x') as Hex)
-      if (!trackers) continue
+      if (!trackers) continue // topic0 doesn't correspond to ANY tracked event — skip quietly
       for (const { plan, reader, keyTuples } of trackers) {
-        const args = reader.decode(log)
-        if (!args) continue
+        // The reader was selected by topic0, so this log MATCHED a tracked event. Distinguish a
+        // genuine non-match (reader.decode → null, shouldn't happen here) from a matched-but-corrupt
+        // log (reader.decode THROWS): the latter is a real data anomaly we must surface, not swallow.
+        let args: Record<string, unknown> | null
+        try {
+          args = reader.decode(log)
+        } catch (cause) {
+          if (options?.strict) {
+            throw new DecodingError(`failed to decode event "${plan.variable}" (topic0 ${reader.topic0}) — corrupt log body or topics`, 'DECODE_EVENT_FAILED', {
+              cause,
+            })
+          }
+          options?.logger?.warn(
+            { variable: plan.variable, topic0: reader.topic0, block: block.header.number, err: String(cause) },
+            'dropped undecodable event log',
+          )
+          if (options?.stats) options.stats.droppedLogs++
+          continue
+        }
+        if (!args) continue // topic0 mismatch (defensive) — not this reader's event
         for (const tuple of keyTuples) {
           const encoded: Hex[] = []
           const display: string[] = []
@@ -129,7 +158,9 @@ export function processBatch(ctx: TrackingContext, blocks: BlockInput[]): RowBat
       })
       // Scalar field(s) at this slot — a packed slot (e.g. a struct) may host several.
       for (const f of scalarSlots.get(slot) ?? []) {
-        const dec = decoders.get(f.variable)!(sd.next)
+        const decode = decoders.get(f.variable)
+        if (!decode) throw new DecodingError(`no decoder for variable "${f.variable}"`, 'DECODE_MISSING_DECODER')
+        const dec = decode(sd.next)
         valueRows.push({
           contract,
           variable: f.variable,
@@ -145,7 +176,9 @@ export function processBatch(ctx: TrackingContext, blocks: BlockInput[]): RowBat
       // Mapping value at this slot (labeled from an event in this batch).
       const label = labels.get(slot)
       if (label) {
-        const dec = decoders.get(label.variable)!(sd.next)
+        const decode = decoders.get(label.variable)
+        if (!decode) throw new DecodingError(`no decoder for variable "${label.variable}"`, 'DECODE_MISSING_DECODER')
+        const dec = decode(sd.next)
         valueRows.push({
           contract,
           variable: label.variable,

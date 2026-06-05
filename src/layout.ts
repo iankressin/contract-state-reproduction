@@ -11,6 +11,7 @@ import { createRequire } from 'node:module'
 import { dirname, resolve as resolvePath } from 'node:path'
 import type { Hex } from 'viem'
 import type { ShapeOverride, SourceConfig, TrackedVariable, ValueCategory } from './config.ts'
+import { ConfigError, LayoutError } from './errors.ts'
 import { scalarSlot } from './slots.ts'
 
 export type ValueType = { category: ValueCategory; bytes: number }
@@ -46,7 +47,7 @@ function parseSolidityType(t: string): ValueType {
   if (t === 'address') return { category: 'address', bytes: 20 }
   if (t === 'bool') return { category: 'bool', bytes: 1 }
   if ((m = t.match(/^bytes(\d+)$/))) return { category: 'bytes', bytes: Number(m[1]) }
-  throw new Error(`Unsupported value type "${t}" (supported: uintN, intN, address, bool, bytesN)`)
+  throw new LayoutError(`Unsupported value type "${t}" (supported: uintN, intN, address, bool, bytesN)`, 'LAYOUT_UNSUPPORTED_VALUE_TYPE')
 }
 
 /** Canonical ABI type string for a value type — used to ABI-encode mapping keys. */
@@ -78,9 +79,10 @@ async function loadSolc(): Promise<SolcModule> {
   try {
     return (await import('solc')).default as SolcModule
   } catch {
-    throw new Error(
+    throw new ConfigError(
       "Compiling from source requires the optional 'solc' peer dependency. " +
         'Install it (e.g. `pnpm add solc`) or pin variable shapes inline via `shape` / `scalar()` / `mapping()`.',
+      'CONFIG_SOLC_NOT_INSTALLED',
     )
   }
 }
@@ -91,7 +93,7 @@ async function resolveFullVersion(version: string): Promise<string> {
     releases?: Record<string, string>
   }
   const file = list.releases?.[v]
-  if (!file) throw new Error(`solc ${v} not found in the release list`)
+  if (!file) throw new ConfigError(`solc ${v} not found in the release list`, 'CONFIG_SOLC_VERSION_NOT_FOUND')
   return file.replace(/^soljson-/, '').replace(/\.js$/, '')
 }
 
@@ -139,7 +141,8 @@ export async function compileLayout(src: SourceConfig): Promise<RawLayout> {
   const compiler = await getCompiler(src.solcVersion)
   const output = JSON.parse(compiler.compile(JSON.stringify(input), { import: findImports }))
   const fatal = (output.errors ?? []).filter((e: { severity: string }) => e.severity === 'error')
-  if (fatal.length) throw new Error('solc compilation failed:\n' + fatal.map((e: { formattedMessage: string }) => e.formattedMessage).join('\n'))
+  if (fatal.length)
+    throw new LayoutError('solc compilation failed:\n' + fatal.map((e: { formattedMessage: string }) => e.formattedMessage).join('\n'), 'LAYOUT_COMPILE_FAILED')
 
   let layout: { storage?: unknown[]; types?: Record<string, RawType> } | undefined
   for (const file of Object.values(output.contracts ?? {})) {
@@ -150,8 +153,9 @@ export async function compileLayout(src: SourceConfig): Promise<RawLayout> {
     }
   }
   if (!layout) {
-    throw new Error(
+    throw new LayoutError(
       `Contract "${src.contractName}" with a storageLayout not found. ` + `(solc < 0.5.13 cannot emit storageLayout — pin shapes via \`shape\` instead.)`,
+      'LAYOUT_NO_STORAGE_LAYOUT',
     )
   }
 
@@ -169,7 +173,7 @@ function planFromShape(variable: string, shape: ShapeOverride, decodeBits?: numb
   if (shape.keyTypes && shape.keyTypes.length > 0) {
     // validate key types parse
     for (const k of shape.keyTypes) parseSolidityType(k)
-    if (shape.keyTypes.length > 2) throw new Error(`${variable}: decoded layer supports mapping depth <= 2`)
+    if (shape.keyTypes.length > 2) throw new LayoutError(`${variable}: decoded layer supports mapping depth <= 2`, 'LAYOUT_MAPPING_DEPTH')
     return { variable, kind: 'mapping', baseSlot: shape.slot, keyTypes: shape.keyTypes, value, decodeBits }
   }
   return { variable, kind: 'scalar', slot: scalarSlot(shape.slot), offset: shape.offset ?? 0, value, decodeBits }
@@ -190,17 +194,18 @@ function plansFromLayout(variable: string, raw: RawLayout, decodeBits?: number):
     const parent = variable.slice(0, dot)
     const memberName = variable.slice(dot + 1)
     const entry = raw.vars[parent]
-    if (!entry) throw new Error(`Variable "${parent}" not in storage layout. Known: ${Object.keys(raw.vars).join(', ') || '(none)'}`)
+    if (!entry)
+      throw new LayoutError(`Variable "${parent}" not in storage layout. Known: ${Object.keys(raw.vars).join(', ') || '(none)'}`, 'LAYOUT_VAR_NOT_FOUND')
     const member = raw.types[entry.type]?.members?.find((m) => m.label === memberName)
-    if (!member) throw new Error(`Struct "${parent}" has no member "${memberName}"`)
+    if (!member) throw new LayoutError(`Struct "${parent}" has no member "${memberName}"`, 'LAYOUT_MEMBER_NOT_FOUND')
     const plan = memberPlan(variable, entry.slot, member, raw.types, decodeBits)
-    if (!plan) throw new Error(`${variable}: unsupported member type ${member.type}`)
+    if (!plan) throw new LayoutError(`${variable}: unsupported member type ${member.type}`, 'LAYOUT_UNSUPPORTED_MEMBER')
     return [plan]
   }
 
   const entry = raw.vars[variable]
   if (!entry) {
-    throw new Error(`Variable "${variable}" not in storage layout. Known: ${Object.keys(raw.vars).join(', ') || '(none)'}`)
+    throw new LayoutError(`Variable "${variable}" not in storage layout. Known: ${Object.keys(raw.vars).join(', ') || '(none)'}`, 'LAYOUT_VAR_NOT_FOUND')
   }
   const t = raw.types[entry.type]
 
@@ -210,26 +215,29 @@ function plansFromLayout(variable: string, raw: RawLayout, decodeBits?: number):
     while (raw.types[cur]?.encoding === 'mapping') {
       const keyId = raw.types[cur]!.key!
       const kt = parseSolcType(keyId, raw.types)
-      if (!kt) throw new Error(`${variable}: unsupported mapping key type ${keyId}`)
+      if (!kt) throw new LayoutError(`${variable}: unsupported mapping key type ${keyId}`, 'LAYOUT_UNSUPPORTED_KEY_TYPE')
       keyTypes.push(abiTypeOf(kt))
       cur = raw.types[cur]!.value!
     }
-    if (keyTypes.length > 2) throw new Error(`${variable}: decoded layer supports mapping depth <= 2`)
+    if (keyTypes.length > 2) throw new LayoutError(`${variable}: decoded layer supports mapping depth <= 2`, 'LAYOUT_MAPPING_DEPTH')
     const value = parseSolcType(cur, raw.types)
-    if (!value) throw new Error(`${variable}: unsupported mapping value type ${cur} (only value types are decoded)`)
+    if (!value) throw new LayoutError(`${variable}: unsupported mapping value type ${cur} (only value types are decoded)`, 'LAYOUT_UNSUPPORTED_VALUE_TYPE')
     return [{ variable, kind: 'mapping', baseSlot: entry.slot, keyTypes, value, decodeBits }]
   }
 
   // Struct: expand to one scalar plan per value-type member, named "<var>.<member>".
   if (t?.members) {
     const plans = t.members.map((m) => memberPlan(`${variable}.${m.label}`, entry.slot, m, raw.types, decodeBits)).filter((p): p is Plan => p !== null)
-    if (!plans.length) throw new Error(`${variable}: struct has no value-type members to decode`)
+    if (!plans.length) throw new LayoutError(`${variable}: struct has no value-type members to decode`, 'LAYOUT_NO_DECODABLE_MEMBERS')
     return plans
   }
 
   const value = parseSolcType(entry.type, raw.types)
   if (!value) {
-    throw new Error(`${variable}: unsupported type ${entry.type} (arrays/strings/dynamic bytes are captured raw in state_log only)`)
+    throw new LayoutError(
+      `${variable}: unsupported type ${entry.type} (arrays/strings/dynamic bytes are captured raw in state_log only)`,
+      'LAYOUT_UNSUPPORTED_TYPE',
+    )
   }
   return [{ variable, kind: 'scalar', slot: scalarSlot(entry.slot), offset: entry.offset, value, decodeBits }]
 }
@@ -240,7 +248,7 @@ export async function resolvePlans(src: SourceConfig | undefined, vars: TrackedV
   const raw = needCompile ? (src ? await compileLayout(src) : undefined) : undefined
   if (needCompile && !raw) {
     const missing = vars.filter((v) => !v.shape).map((v) => v.variable)
-    throw new Error(`No source to compile, and these variables have no shape: ${missing.join(', ')}`)
+    throw new ConfigError(`No source to compile, and these variables have no shape: ${missing.join(', ')}`, 'CONFIG_NO_SOURCE_NO_SHAPE')
   }
   return vars.flatMap((v) => (v.shape ? [planFromShape(v.variable, v.shape, v.decodeBits)] : plansFromLayout(v.variable, raw!, v.decodeBits)))
 }

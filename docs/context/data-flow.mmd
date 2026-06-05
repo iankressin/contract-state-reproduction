@@ -1,11 +1,11 @@
 flowchart TD
     subgraph Authoring["Authoring (build time) — builder.ts / track.ts"]
         A["ContractState.forContract(addr)\n.onPortal .deployedAt .fromSource? .withId? .track(scalar/mapping/derived)"]
-        A --> B[".run(range) / .collect(range)\nbuilder.resolve()"]
-        B --> C["resolveConfig()\nvalidate addr regex + non-empty tracked → ResolvedConfig"]
+        A --> B[".run(range, opts?: RunOptions) / .collect(range, opts?)\nbuilder.resolve()"]
+        B --> C["resolveConfig()\nvalidate addr regex + non-empty tracked + reject DUPLICATE variable names\n(all faults → ConfigError w/ stable code) → ResolvedConfig"]
     end
 
-    C --> D["indexState(config, sink, range)\nindexer.ts"]
+    C --> D["indexState(config, sink, range, opts?)\nindexer.ts — build run-ctx bag ONCE:\nrun = opts ?? {}, logger = run.logger ?? defaultLogger, stats = newStats()\nprogress lines via logger.info (was console.log)"]
 
     subgraph Engine["Indexing engine — indexer.ts"]
         D --> E["resolvePlans(source, trackedVars)\nlayout.ts"]
@@ -18,17 +18,21 @@ flowchart TD
         H --> I["evmPortalStream({id, portal.url, outputs})\n@subsquid/pipes/evm — backfill then live follow"]
     end
 
-    I -->|"stream of {data: BlockInput[]}"| J{"sink.consume(stream, tracking)\nsink.ts"}
+    I -->|"stream of {data: BlockInput[]}"| J{"sink.consume(stream, tracking, options?: ConsumeOptions{run,logger,stats})\nsink.ts"}
 
-    subgraph Transform["Pure transform — pipeline.ts processBatch()"]
-        K1["Pass 1: logs → match topic0 → decode event args →\nmappingSlot(baseSlot, encodedKeys) → labels{slot→variable,key1,key2}\n(slots.ts, events.ts)"]
-        K2["Pass 2: stateDiffs (skip balance/code/nonce) →\nstateRow (raw) + decodeWord scalar field(s) + decode labeled mapping value\n(decode.ts)"]
-        K1 --> K2
+    subgraph Transform["Pure transform — pipeline.ts processBatch(ctx, blocks, options?{strict,logger,stats})"]
+        K1["Pass 1: logs → mapByTopic.get(topic0)\nno tracker → skip quietly (non-matching log)"]
+        K1 -->|"topic0 MATCHED a tracked event → reader.decode(log)"| K1a{"decode ok?"}
+        K1a -->|"args"| K1b["mappingSlot(baseSlot, encodedKeys) → labels{slot→variable,key1,key2}\n(slots.ts, events.ts)"]
+        K1a -->|"reader.decode THROWS (matched-but-undecodable)"| K1c["strict → throw DecodingError(DECODE_EVENT_FAILED)\nresilient (default) → logger.warn('dropped undecodable event log') + stats.droppedLogs++ → continue"]
+        K2["Pass 2: stateDiffs (skip balance/code/nonce) →\nstateRow (raw) + decodeWord scalar field(s) + decode labeled mapping value\n(decode-path decoder lookups GUARDED: missing → DecodingError(DECODE_MISSING_DECODER), no '!')"]
+        K1b --> K2
+        K1c --> K2
         K2 --> K3["RowBatch {stateRows, labelRows, valueRows}"]
     end
 
-    J -->|"PostgresSink: drizzleTarget pipeTo"| T1["onStart: createTablesSql() + INSERT scalar slot_label\nonData: processBatch → batchForInsert → INSERT ... ON CONFLICT DO NOTHING\n(reorg snapshots + cursor + tx handled by Drizzle target)"]
-    J -->|"MemorySink: for await"| T2["processBatch → batches[]  (no reorg; bounded only)"]
+    J -->|"PostgresSink: withRetry(()=>stream.pipeTo(target), run.retry, {logger,stats,signal})\ncatch → non-ContractStateError wrapped as SinkError(SINK_CONSUME_FAILED)"| T1["onStart: createTablesSql() + INSERT scalar slot_label\nonData: processBatch(…, {strict,logger,stats}) → batchForInsert → INSERT ... ON CONFLICT DO NOTHING\n(reorg snapshots + cursor + tx handled by Drizzle target)"]
+    J -->|"MemorySink: for await (NO retry — restart would dup batches)"| T2["processBatch(…, {strict,logger,stats}) → batches[]  (no reorg; bounded only)"]
     T1 --> K1
     T2 --> K1
 

@@ -1,22 +1,31 @@
 {
   "builder.ts": [
     "config.ts",
+    "errors.ts",
     "indexer.ts",
+    "options.ts",
     "pipeline.ts",
     "query.ts",
     "sink.ts",
     "track.ts"
   ],
-  "config.ts": [],
+  "config.ts": [
+    "errors.ts"
+  ],
   "decode.ts": [
     "layout.ts"
   ],
+  "errors.ts": [],
   "events.ts": [],
   "index.ts": [
     "builder.ts",
     "config.ts",
+    "errors.ts",
+    "observability.ts",
+    "options.ts",
     "pipeline.ts",
     "query.ts",
+    "resilience.ts",
     "schema.ts",
     "sink.ts",
     "track.ts"
@@ -24,13 +33,21 @@
   "indexer.ts": [
     "config.ts",
     "layout.ts",
+    "observability.ts",
+    "options.ts",
     "pipeline.ts",
     "query.ts",
     "sink.ts"
   ],
   "layout.ts": [
     "config.ts",
+    "errors.ts",
     "slots.ts"
+  ],
+  "observability.ts": [],
+  "options.ts": [
+    "observability.ts",
+    "resilience.ts"
   ],
   "oracle.ts": [
     "decode.ts",
@@ -40,21 +57,31 @@
   "pipeline.ts": [
     "config.ts",
     "decode.ts",
+    "errors.ts",
     "events.ts",
     "layout.ts",
+    "observability.ts",
     "schema.ts",
     "slots.ts"
   ],
   "query.ts": [
     "pipeline.ts"
   ],
+  "resilience.ts": [
+    "observability.ts"
+  ],
   "schema.ts": [],
   "sink.ts": [
+    "errors.ts",
+    "observability.ts",
+    "options.ts",
     "pipeline.ts",
+    "resilience.ts",
     "schema.ts"
   ],
   "slots.ts": [],
   "track.ts": [
-    "config.ts"
+    "config.ts",
+    "errors.ts"
   ]
 }

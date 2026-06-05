@@ -6,48 +6,72 @@ flowchart LR
     builder_ts["builder.ts"]
     config_ts["config.ts"]
     decode_ts["decode.ts"]
+    errors_ts["errors.ts"]
     events_ts["events.ts"]
     index_ts["index.ts"]
     indexer_ts["indexer.ts"]
     layout_ts["layout.ts"]
+    observability_ts["observability.ts"]
+    options_ts["options.ts"]
     oracle_ts["oracle.ts"]
     pipeline_ts["pipeline.ts"]
     query_ts["query.ts"]
+    resilience_ts["resilience.ts"]
     schema_ts["schema.ts"]
     sink_ts["sink.ts"]
     slots_ts["slots.ts"]
     track_ts["track.ts"]
     builder_ts --> config_ts
+    builder_ts --> errors_ts
     builder_ts --> indexer_ts
+    builder_ts --> options_ts
     builder_ts --> pipeline_ts
     builder_ts --> query_ts
     builder_ts --> sink_ts
     builder_ts --> track_ts
+    config_ts --> errors_ts
     decode_ts --> layout_ts
     index_ts --> builder_ts
     index_ts --> config_ts
+    index_ts --> errors_ts
+    index_ts --> observability_ts
+    index_ts --> options_ts
     index_ts --> pipeline_ts
     index_ts --> query_ts
+    index_ts --> resilience_ts
     index_ts --> schema_ts
     index_ts --> sink_ts
     index_ts --> track_ts
     indexer_ts --> config_ts
     indexer_ts --> layout_ts
+    indexer_ts --> observability_ts
+    indexer_ts --> options_ts
     indexer_ts --> pipeline_ts
     indexer_ts --> query_ts
     indexer_ts --> sink_ts
     layout_ts --> config_ts
+    layout_ts --> errors_ts
     layout_ts --> slots_ts
+    options_ts --> observability_ts
+    options_ts --> resilience_ts
     oracle_ts --> decode_ts
     oracle_ts --> layout_ts
     oracle_ts --> slots_ts
     pipeline_ts --> config_ts
     pipeline_ts --> decode_ts
+    pipeline_ts --> errors_ts
     pipeline_ts --> events_ts
     pipeline_ts --> layout_ts
+    pipeline_ts --> observability_ts
     pipeline_ts --> schema_ts
     pipeline_ts --> slots_ts
     query_ts --> pipeline_ts
+    resilience_ts --> observability_ts
+    sink_ts --> errors_ts
+    sink_ts --> observability_ts
+    sink_ts --> options_ts
     sink_ts --> pipeline_ts
+    sink_ts --> resilience_ts
     sink_ts --> schema_ts
     track_ts --> config_ts
+    track_ts --> errors_ts

@@ -12,6 +12,7 @@
  * when source is unavailable).
  */
 import type { Hex } from 'viem'
+import { ConfigError } from './errors.ts'
 
 export type ValueCategory = 'uint' | 'int' | 'address' | 'bool' | 'bytes'
 
@@ -81,8 +82,16 @@ export type ResolvedConfig = JobConfig & {
  * way to build this is the `ContractState` fluent builder (which passes the URL from `.onPortal`).
  */
 export function resolveConfig(cfg: JobConfig, portalUrl: string): ResolvedConfig {
-  if (!/^0x[0-9a-fA-F]{40}$/.test(cfg.address)) throw new Error(`Invalid contract address: ${cfg.address}`)
-  if (cfg.trackedVariables.length === 0) throw new Error('config.trackedVariables is empty — nothing to track')
+  if (!/^0x[0-9a-fA-F]{40}$/.test(cfg.address)) throw new ConfigError(`Invalid contract address: ${cfg.address}`, 'CONFIG_INVALID_ADDRESS')
+  if (cfg.trackedVariables.length === 0) throw new ConfigError('config.trackedVariables is empty — nothing to track', 'CONFIG_NO_TRACKED_VARS')
+  // Reject duplicate tracked-variable names: two specs sharing a `variable` would silently overwrite
+  // each other in the pipeline's decoder map (decoders.set(p.variable, …)) — surface it up front.
+  const seen = new Set<string>()
+  for (const v of cfg.trackedVariables) {
+    if (seen.has(v.variable))
+      throw new ConfigError(`Duplicate tracked variable "${v.variable}" — each variable may be tracked only once`, 'CONFIG_DUPLICATE_VARIABLE')
+    seen.add(v.variable)
+  }
   return {
     ...cfg,
     address: cfg.address.toLowerCase() as Hex,
