@@ -2,14 +2,14 @@
 
 ## Supported versions
 
-Security fixes are provided for the latest `0.1.x` release line. Older
-pre-release versions (`< 0.1`) are not maintained — please upgrade
+Security fixes are provided for the latest `0.2.x` release line. Older
+versions (`< 0.2`) are not maintained — please upgrade
 to the current release before reporting an issue.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
-| < 0.1   | :x:                |
+| 0.2.x   | :white_check_mark: |
+| < 0.2   | :x:                |
 
 ## Reporting a vulnerability
 
