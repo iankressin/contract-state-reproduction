@@ -30,6 +30,10 @@ export type {
   ValueRow,
 } from './pipeline.ts'
 
+// ── Resume cursor (for custom sinks: load where you left off, save per batch) ──
+export { MemoryCursor, withCursor } from './cursor.ts'
+export type { Cursor } from './cursor.ts'
+
 // ── Schema (for querying Postgres directly) ──
 export { allTables, createTablesSql, slotLabel, stateLog, stateValue } from './schema.ts'
 
@@ -38,9 +42,13 @@ export { ConfigError, ContractStateError, DecodingError, LayoutError, PortalErro
 
 // ── Run-time behavior (strict/retry/abort, logging, counters) ──
 export type { ConsumeOptions } from './sink.ts'
-export type { Logger, LogLevel, Stats } from './observability.ts'
+export { createLogger } from './observability.ts'
+export type { Logger, LogLevel, ReorgInfo, Stats } from './observability.ts'
 export type { RunOptions } from './options.ts'
 export type { RetryPolicy } from './resilience.ts'
+
+// ── Validation (inspect a builder without running) ──
+export type { Problem } from './validation.ts'
 
 // ── Shared types ──
 export type { SourceConfig, ValueCategory } from './config.ts'
