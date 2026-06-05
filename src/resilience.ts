@@ -160,9 +160,10 @@ export async function withRetry<T>(fn: () => Promise<T>, policy: RetryPolicy = {
     try {
       return await fn()
     } catch (err) {
+      const retryable = isRetryable(err)
       const lastAttempt = attempt >= maxAttempts
-      if (!isRetryable(err) || lastAttempt) {
-        if (lastAttempt && isRetryable(err) && stats) stats.retriesExhausted++
+      if (!retryable || lastAttempt) {
+        if (lastAttempt && retryable && stats) stats.retriesExhausted++
         throw err
       }
       if (stats) stats.retries++

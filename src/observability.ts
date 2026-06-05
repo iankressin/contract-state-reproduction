@@ -69,8 +69,7 @@ export function createLogger(level: LogLevel = 'info'): Logger {
     if (level === 'silent') return
     if (LEVEL_RANK[at] < configuredRank) return
     const write = CONSOLE_METHOD[at]
-    if (typeof objOrMsg === 'string' && msg === undefined) write(objOrMsg)
-    else if (msg === undefined) write(objOrMsg)
+    if (msg === undefined) write(objOrMsg)
     else write(objOrMsg, msg)
   }
 
