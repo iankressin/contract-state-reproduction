@@ -1,5 +1,5 @@
 {
-  "name": "@subsquid/contract-state",
+  "name": "@iankressin/contract-state",
   "version": "0.1.0",
   "description": "EVM contract historical state reproduction — streams a contract's storage diffs into an append-only Postgres DB (Subsquid Pipes SDK)",
   "license": "MIT",
@@ -7,6 +7,10 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/iankressin/contract-state-reproduction.git"
+  },
+  "homepage": "https://github.com/iankressin/contract-state-reproduction#readme",
+  "bugs": {
+    "url": "https://github.com/iankressin/contract-state-reproduction/issues"
   },
   "keywords": [
     "ethereum",
