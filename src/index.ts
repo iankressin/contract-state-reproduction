@@ -1,5 +1,5 @@
 /**
- * Public API of `@subsquid/contract-state`.
+ * Public API of `@iankressin/contract-state`.
  *
  * The one obvious way in is the `ContractState` fluent builder + the `scalar`/`mapping`/`derived`
  * track-spec helpers. `PostgresSink`/`MemorySink` (or a custom `StateSink`) decide where rows land;

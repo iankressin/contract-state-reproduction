@@ -83,7 +83,10 @@ test.skipIf(!process.env.RUN_E2E)(
            ORDER BY key1, "blockNumber" DESC, "transactionIndex" DESC`,
         [N],
       )
-      const top = rows.map((r) => ({ h: r.key1 as Hex, db: BigInt(r.v) })).sort((a, b) => (b.db > a.db ? 1 : -1)).slice(0, 3)
+      const top = rows
+        .map((r) => ({ h: r.key1 as Hex, db: BigInt(r.v) }))
+        .sort((a, b) => (b.db > a.db ? 1 : -1))
+        .slice(0, 3)
       expect(top.length).toBeGreaterThan(0)
       for (const { h, db } of top) {
         const oracle = await chainValueAt(client, address, balancePlan, N, [h])

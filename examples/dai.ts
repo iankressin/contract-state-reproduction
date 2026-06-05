@@ -6,7 +6,7 @@
  *
  * DAI was compiled with solc 0.5.12 (predates storageLayout), so each variable's shape is pinned
  * inline via scalar()/mapping() — no .sol source and no solc needed. In your own project, import
- * from '@subsquid/contract-state' instead of '../src/index.ts'.
+ * from '@iankressin/contract-state' instead of '../src/index.ts'.
  */
 import { ContractState, mapping, PostgresSink, scalar } from '../src/index.ts'
 
@@ -25,10 +25,10 @@ await ContractState.forContract('0x6B175474E89094C44Da98b954EedeAC495271d0F')
   .deployedAt(DEPLOY_BLOCK)
   .track(scalar('totalSupply', { slot: 1, type: 'uint256' }))
   .track(
-    mapping('balanceOf', { slot: 2, keys: ['address'], value: 'uint256' }).keysFrom(
-      'event Transfer(address indexed src, address indexed dst, uint256 wad)',
-      [['src'], ['dst']],
-    ),
+    mapping('balanceOf', { slot: 2, keys: ['address'], value: 'uint256' }).keysFrom('event Transfer(address indexed src, address indexed dst, uint256 wad)', [
+      ['src'],
+      ['dst'],
+    ]),
   )
   .track(
     mapping('allowance', { slot: 3, keys: ['address', 'address'], value: 'uint256' }).keysFrom(

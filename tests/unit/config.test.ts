@@ -48,9 +48,7 @@ describe('track specs → internal TrackedVariable', () => {
     expect(spec._tracked).toEqual({
       variable: 'allowance',
       shape: { slot: 3, keyTypes: ['address', 'address'], valueType: 'uint256' },
-      keySources: [
-        { eventAbi: 'event Approval(address indexed src, address indexed guy, uint256 wad)', keyTuples: [['src', 'guy']] },
-      ],
+      keySources: [{ eventAbi: 'event Approval(address indexed src, address indexed guy, uint256 wad)', keyTuples: [['src', 'guy']] }],
     })
   })
   test('repeated keysFrom appends multiple key sources', () => {
@@ -71,38 +69,27 @@ describe('ContractState builder validation (fails fast, before any network)', ()
   const track = () => scalar('totalSupply', { slot: 1, type: 'uint256' })
 
   test('run() without a portal rejects', async () => {
-    await expect(
-      ContractState.forContract(ADDR).deployedAt(1).track(track()).into(new MemorySink()).run({ from: 1, to: 2 }),
-    ).rejects.toThrow(/no portal/)
+    await expect(ContractState.forContract(ADDR).deployedAt(1).track(track()).into(new MemorySink()).run({ from: 1, to: 2 })).rejects.toThrow(/no portal/)
   })
   test('run() without a deploy block rejects', async () => {
-    await expect(
-      ContractState.forContract(ADDR).onPortal(PORTAL).track(track()).into(new MemorySink()).run({ from: 1, to: 2 }),
-    ).rejects.toThrow(/no deploy block/)
+    await expect(ContractState.forContract(ADDR).onPortal(PORTAL).track(track()).into(new MemorySink()).run({ from: 1, to: 2 })).rejects.toThrow(
+      /no deploy block/,
+    )
   })
   test('run() without a sink rejects', async () => {
-    await expect(
-      ContractState.forContract(ADDR).onPortal(PORTAL).deployedAt(1).track(track()).run({ from: 1, to: 2 }),
-    ).rejects.toThrow(/no sink/)
+    await expect(ContractState.forContract(ADDR).onPortal(PORTAL).deployedAt(1).track(track()).run({ from: 1, to: 2 })).rejects.toThrow(/no sink/)
   })
   test('run() with an invalid address rejects', async () => {
     await expect(
-      ContractState.forContract('0x123')
-        .onPortal(PORTAL)
-        .deployedAt(1)
-        .track(track())
-        .into(new MemorySink())
-        .run({ from: 1, to: 2 }),
+      ContractState.forContract('0x123').onPortal(PORTAL).deployedAt(1).track(track()).into(new MemorySink()).run({ from: 1, to: 2 }),
     ).rejects.toThrow(/Invalid contract address/)
   })
   test('run() with no tracked variables rejects', async () => {
-    await expect(
-      ContractState.forContract(ADDR).onPortal(PORTAL).deployedAt(1).into(new MemorySink()).run({ from: 1, to: 2 }),
-    ).rejects.toThrow(/nothing to track/)
+    await expect(ContractState.forContract(ADDR).onPortal(PORTAL).deployedAt(1).into(new MemorySink()).run({ from: 1, to: 2 })).rejects.toThrow(
+      /nothing to track/,
+    )
   })
   test('collect() without a bounded `to` rejects', async () => {
-    await expect(
-      ContractState.forContract(ADDR).onPortal(PORTAL).deployedAt(1).track(track()).collect({ from: 1 }),
-    ).rejects.toThrow(/bounded range/)
+    await expect(ContractState.forContract(ADDR).onPortal(PORTAL).deployedAt(1).track(track()).collect({ from: 1 })).rejects.toThrow(/bounded range/)
   })
 })

@@ -94,7 +94,11 @@ describe('Uniswap V3 pool — track two packed fields of slot0', () => {
       const planOf = (v: string) => plans.find((p) => p.variable === v)!
       for (const i of showIdx) {
         const bn = blocks[i]!
-        const s0 = (await client.readContract({ address: POOL, abi: SLOT0_ABI, functionName: 'slot0', blockNumber: BigInt(bn) })) as readonly [bigint, number, ...unknown[]]
+        const s0 = (await client.readContract({ address: POOL, abi: SLOT0_ABI, functionName: 'slot0', blockNumber: BigInt(bn) })) as readonly [
+          bigint,
+          number,
+          ...unknown[],
+        ]
         expect(sqrt.get(bn)!.v).toBe((await chainValueAt(client, POOL, planOf('slot0.sqrtPriceX96'), bn)).num!)
         expect(sqrt.get(bn)!.v).toBe(s0[0])
         expect(tickByBlock.get(bn)!.v).toBe((await chainValueAt(client, POOL, planOf('slot0.tick'), bn)).num!)

@@ -23,7 +23,7 @@
  *   slot 8  observations Oracle.Observation[65535]          ┘ in the raw state_log — see "Coverage".
  *
  * factory/token0/token1/fee/tickSpacing/maxLiquidityPerTick are immutables (in bytecode, not
- * storage) and aren't tracked. In your own project, import from '@subsquid/contract-state'.
+ * storage) and aren't tracked. In your own project, import from '@iankressin/contract-state'.
  */
 import { http, type Hex, createPublicClient } from 'viem'
 import { ContractState, scalar } from '../src/index.ts'
@@ -86,16 +86,14 @@ for (const name of names) {
 const valueAt = (name: string, bn: number): bigint | undefined => {
   const s = series.get(name)
   let res: bigint | undefined
-  if (s) for (const b of s.blocks) (b <= bn ? (res = s.byBlock.get(b)) : null)
+  if (s) for (const b of s.blocks) b <= bn ? (res = s.byBlock.get(b)) : null
   return res
 }
 const fmt = (name: string, v: bigint | undefined) => (v == null ? '—' : name === 'slot0.unlocked' ? (v === 1n ? 'true' : 'false') : v.toString())
 
 // Sample first / middle / last block where the price moved (sqrtPriceX96 writes on every swap).
 const priceBlocks = series.get('slot0.sqrtPriceX96')!.blocks
-const samples = [...new Set([priceBlocks[0], priceBlocks[priceBlocks.length >> 1], priceBlocks[priceBlocks.length - 1]])].filter(
-  (b): b is number => b != null,
-)
+const samples = [...new Set([priceBlocks[0], priceBlocks[priceBlocks.length >> 1], priceBlocks[priceBlocks.length - 1]])].filter((b): b is number => b != null)
 
 console.log(`\nUniswap V3 pool ${POOL} — reconstructed storage over blocks ${FROM}–${TO}`)
 if (!samples.length) {
@@ -115,7 +113,10 @@ if (!samples.length) {
 }
 
 // ── Coverage: decoded value fields vs the raw slot writes the stream also captured ──
-const plans = await resolvePlans(undefined, tracks.map((t) => t._tracked))
+const plans = await resolvePlans(
+  undefined,
+  tracks.map((t) => t._tracked),
+)
 const decodedSlots = new Set(plans.map((p) => BigInt((p as { slot: Hex }).slot))) // slots 0–4
 const counts = new Map<string, number>()
 for (const r of valueRows) counts.set(r.variable, (counts.get(r.variable) ?? 0) + 1)

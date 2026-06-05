@@ -15,7 +15,10 @@ export function decodeWord(word: Hex | null | undefined, value: ValueType, offse
 
   if (value.category === 'bytes') {
     // Fixed bytesN is left-aligned (high-order). Only offset 0 is supported here.
-    const hex = `0x${w.slice(2).padStart(64, '0').slice(0, value.bytes * 2)}`
+    const hex = `0x${w
+      .slice(2)
+      .padStart(64, '0')
+      .slice(0, value.bytes * 2)}`
     return { num: null, hex }
   }
 

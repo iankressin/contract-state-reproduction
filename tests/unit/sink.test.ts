@@ -13,7 +13,11 @@ const B = '0xbb22222222222222222222222222222222222222' as Hex
 const balSlot = (h: Hex) => mappingSlot(2, [encodeKey('address', h)])
 
 const TRACKED: TrackedVariable[] = [
-  { variable: 'balanceOf', shape: { slot: 2, keyTypes: ['address'], valueType: 'uint256' }, keySources: [{ eventAbi: 'event Transfer(address indexed from, address indexed to, uint256 value)', keyTuples: [['from'], ['to']] }] },
+  {
+    variable: 'balanceOf',
+    shape: { slot: 2, keyTypes: ['address'], valueType: 'uint256' },
+    keySources: [{ eventAbi: 'event Transfer(address indexed from, address indexed to, uint256 value)', keyTuples: [['from'], ['to']] }],
+  },
 ]
 
 async function* fakeStream(...batches: BlockInput[][]) {

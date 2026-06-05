@@ -14,13 +14,5 @@ export default defineConfig({
   target: 'node22',
   platform: 'node',
   splitting: false,
-  external: [
-    '@subsquid/pipes',
-    /^@subsquid\/pipes\//,
-    'viem',
-    'drizzle-orm',
-    /^drizzle-orm\//,
-    'pg',
-    'solc',
-  ],
+  external: ['@subsquid/pipes', /^@subsquid\/pipes\//, 'viem', 'drizzle-orm', /^drizzle-orm\//, 'pg', 'solc'],
 })

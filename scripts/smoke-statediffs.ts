@@ -48,11 +48,5 @@ for await (const { data } of stream) {
   }
 }
 
-console.log(
-  JSON.stringify(
-    { contract: CONTRACT, from: FROM, to: TO, blocksScanned: blocks, allDiffs, storageDiffs, kinds, sample },
-    null,
-    2,
-  ),
-)
+console.log(JSON.stringify({ contract: CONTRACT, from: FROM, to: TO, blocksScanned: blocks, allDiffs, storageDiffs, kinds, sample }, null, 2))
 console.log(storageDiffs > 0 ? '\n✅ STATE DIFFS ARE SERVED' : '\n❌ NO STORAGE DIFFS RETURNED')
