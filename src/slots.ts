@@ -1,11 +1,16 @@
 /**
  * EVM storage-slot derivation (Solidity layout rules) for value-typed keys.
  */
-import { type Hex, concat, encodeAbiParameters, keccak256, pad, toHex } from 'viem'
+import { type AbiParameter, type Hex, concat, encodeAbiParameters, keccak256, pad, toHex } from 'viem'
 
 /** ABI-encode a value-type mapping key to its 32-byte preimage segment h(k). */
 export function encodeKey(abiType: string, value: unknown): Hex {
-  return encodeAbiParameters([{ type: abiType }], [value as never])
+  // `abiType` is a runtime string, so viem can't derive a literal primitive type for the
+  // value. Typing the params as AbiParameter[] (not a const literal) makes viem widen the
+  // values arg to `readonly unknown[]`, so the `unknown` value passes with no cast — viem
+  // validates `value` against `abiType` at runtime.
+  const params: AbiParameter[] = [{ type: abiType }]
+  return encodeAbiParameters(params, [value])
 }
 
 /** Fixed slot of a scalar/value-type state variable. */
