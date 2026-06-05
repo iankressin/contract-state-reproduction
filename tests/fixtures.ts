@@ -20,6 +20,16 @@ export function indexedAddrEvent(topic0: Hex, a: Hex, b: Hex, value: bigint): Lo
 export const transferLog = (from: Hex, to: Hex, value: bigint) => indexedAddrEvent(TRANSFER_TOPIC, from, to, value)
 export const approvalLog = (owner: Hex, spender: Hex, value: bigint) => indexedAddrEvent(APPROVAL_TOPIC, owner, spender, value)
 
+/**
+ * A log whose `topic0` MATCHES Transfer but is otherwise corrupt: it omits the two indexed-address
+ * topics, so viem's `decodeEventLog` throws (topics-arity mismatch). Used to exercise the
+ * matched-but-undecodable path (strict throw vs resilient warn+drop).
+ */
+export const malformedTransferLog = (): LogInput => ({ topics: [TRANSFER_TOPIC], data: '0x' })
+
+/** A log whose `topic0` matches NO tracked event — must be skipped without counting as dropped. */
+export const unrelatedLog = (): LogInput => ({ topics: [`0x${'ab'.repeat(32)}` as Hex], data: '0x' })
+
 export function diff(key: string, next?: Hex, opts: { prev?: Hex; kind?: string; tx?: number } = {}): DiffInput {
   return { transactionIndex: opts.tx ?? 0, key, kind: opts.kind ?? '*', prev: opts.prev, next }
 }

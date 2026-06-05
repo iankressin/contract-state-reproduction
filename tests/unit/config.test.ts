@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import { ContractState } from '../../src/builder.ts'
 import { type JobConfig, resolveConfig } from '../../src/config.ts'
+import { ConfigError } from '../../src/errors.ts'
 import { MemorySink } from '../../src/sink.ts'
 import { derived, mapping, scalar } from '../../src/track.ts'
 
@@ -25,6 +26,21 @@ describe('resolveConfig', () => {
   })
   test('rejects an empty trackedVariables list', () => {
     expect(() => resolveConfig({ ...base, trackedVariables: [] }, PORTAL)).toThrow(/nothing to track/)
+  })
+  test('rejects duplicate tracked-variable names (would silently overwrite the decoder map)', () => {
+    const dup: JobConfig = {
+      ...base,
+      trackedVariables: [
+        { variable: 'balanceOf', shape: { slot: 2, keyTypes: ['address'], valueType: 'uint256' } },
+        { variable: 'balanceOf', shape: { slot: 9, keyTypes: ['address'], valueType: 'uint128' } },
+      ],
+    }
+    expect(() => resolveConfig(dup, PORTAL)).toThrow(ConfigError)
+    expect(() => resolveConfig(dup, PORTAL)).toThrow(/Duplicate tracked variable "balanceOf"/)
+  })
+  test('typed errors carry stable codes', () => {
+    expect(() => resolveConfig({ ...base, address: '0x123' }, PORTAL)).toThrow(expect.objectContaining({ code: 'CONFIG_INVALID_ADDRESS' }))
+    expect(() => resolveConfig({ ...base, trackedVariables: [] }, PORTAL)).toThrow(expect.objectContaining({ code: 'CONFIG_NO_TRACKED_VARS' }))
   })
 })
 

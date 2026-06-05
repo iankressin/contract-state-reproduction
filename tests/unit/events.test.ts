@@ -26,4 +26,11 @@ describe('makeEventReader', () => {
     expect(r.decode({ topics: [APPROVAL_TOPIC], data: '0x' })).toBeNull()
     expect(r.decode({ topics: ['0x00'] as Hex[], data: '0x' })).toBeNull()
   })
+
+  test('THROWS (not null) when topic0 matches but the log is corrupt', () => {
+    const r = makeEventReader(TRANSFER_SIG)
+    // topic0 matches Transfer but the two indexed-address topics are missing → real decode failure,
+    // surfaced as a throw so the pipeline can distinguish it from a quiet non-match.
+    expect(() => r.decode({ topics: [TRANSFER_TOPIC], data: '0x' })).toThrow()
+  })
 })
