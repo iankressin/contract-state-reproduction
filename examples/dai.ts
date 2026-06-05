@@ -6,7 +6,7 @@
  *
  * DAI was compiled with solc 0.5.12 (predates storageLayout), so each variable's shape is pinned
  * inline via scalar()/mapping() — no .sol source and no solc needed. In your own project, import
- * from '@subsquid/contract-state' instead of '../src/index.ts'.
+ * from '@iankressin/contract-state' instead of '../src/index.ts'.
  */
 import { ContractState, mapping, PostgresSink, scalar } from '../src/index.ts'
 

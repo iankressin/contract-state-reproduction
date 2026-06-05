@@ -23,7 +23,7 @@
  *   slot 8  observations Oracle.Observation[65535]          ┘ in the raw state_log — see "Coverage".
  *
  * factory/token0/token1/fee/tickSpacing/maxLiquidityPerTick are immutables (in bytecode, not
- * storage) and aren't tracked. In your own project, import from '@subsquid/contract-state'.
+ * storage) and aren't tracked. In your own project, import from '@iankressin/contract-state'.
  */
 import { http, type Hex, createPublicClient } from 'viem'
 import { ContractState, scalar } from '../src/index.ts'

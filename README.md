@@ -1,4 +1,4 @@
-# @subsquid/contract-state — EVM contract historical state reproduction
+# @iankressin/contract-state — EVM contract historical state reproduction
 
 Reproduces the full historical **storage state** of an Ethereum contract into an
 **append-only Postgres** database (or memory), using the [Subsquid Pipes SDK](https://www.npmjs.com/package/@subsquid/pipes).
@@ -9,7 +9,7 @@ shapes), it streams every storage-slot change over the contract's life and lets 
 token's total supply, or an allowance, at any past block.
 
 ```ts
-import { ContractState, PostgresSink, mapping, scalar } from '@subsquid/contract-state'
+import { ContractState, PostgresSink, mapping, scalar } from '@iankressin/contract-state'
 
 await ContractState.forContract('0x6B175474E89094C44Da98b954EedeAC495271d0F') // DAI
   .onPortal('https://portal.sqd.dev/datasets/ethereum-mainnet')
@@ -73,7 +73,7 @@ arrays, `string`/`bytes`, nested-struct members, mapping depth > 2) is still cap
 ## Install
 
 ```bash
-pnpm add @subsquid/contract-state
+pnpm add @iankressin/contract-state
 ```
 
 Requires **Node ≥ 22.15** (ESM-only). Three dependencies are **optional peers**, installed only for
@@ -98,7 +98,7 @@ reorgs automatically. `fromConnectionString` builds the Drizzle handle for you �
 `drizzle-orm` yourself.
 
 ```ts
-import { ContractState, PostgresSink, mapping, scalar } from '@subsquid/contract-state'
+import { ContractState, PostgresSink, mapping, scalar } from '@iankressin/contract-state'
 
 await ContractState.forContract('0x6B175474E89094C44Da98b954EedeAC495271d0F')
   .onPortal('https://portal.sqd.dev/datasets/ethereum-mainnet')
@@ -133,7 +133,7 @@ memory and get the rows back directly — no database, no Drizzle — ideal for 
 one-off reconstructions:
 
 ```ts
-import { ContractState, scalar } from '@subsquid/contract-state'
+import { ContractState, scalar } from '@iankressin/contract-state'
 
 const { valueRows } = await ContractState.forContract('0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640')
   .onPortal('https://portal.sqd.dev/datasets/ethereum-mainnet')
@@ -166,7 +166,7 @@ await ContractState.forContract('0x…')
 
 // (b) Derive from source — install the optional `solc` peer, point at the .sol file. The kind
 //     (scalar / mapping / struct) is auto-detected; solc >= 0.5.13 (when storageLayout was added).
-import { ContractState, derived } from '@subsquid/contract-state'
+import { ContractState, derived } from '@iankressin/contract-state'
 
 await ContractState.forContract('0x…')
   .onPortal(PORTAL).deployedAt(1_234_567)
@@ -185,7 +185,7 @@ under `.solc-cache/`.
 `processBatch` turns each streamed block batch into the same row sets the built-in sinks persist:
 
 ```ts
-import { processBatch, type StateSink, type BlockStream, type TrackingContext } from '@subsquid/contract-state'
+import { processBatch, type StateSink, type BlockStream, type TrackingContext } from '@iankressin/contract-state'
 
 class MySink implements StateSink {
   async consume(stream: BlockStream, tracking: TrackingContext): Promise<void> {
