@@ -20,6 +20,9 @@ out for Z" knowledge that is otherwise lost in agent-driven development.
 
 ## Reorg & failure handling
 - Reorg rollback exists ONLY in PostgresSink's Drizzle target (PK-keyed snapshot triggers); MemorySink does NO rollback, so it must stay bounded — collect() requires a `to` block and unbounded follow needs a PostgresSink.
+- withRetry (resilience.ts) rethrows the ORIGINAL error unchanged on BOTH the non-retryable and attempts-exhausted paths — it NEVER wraps; the call site is responsible for wrapping into SinkError/PortalError, and the identity rethrown on exhaustion is the LAST attempt's error.
+- defaultIsRetryable is default-DENY: retryable iff a known infra code (ECONNRESET/ECONNREFUSED/ETIMEDOUT/EAI_AGAIN/EPIPE/ENOTFOUND) OR HTTP status ≥500 or ===429; AbortError and everything else (incl. ConfigError/LayoutError/DecodingError, which carry no network code) are fatal — library faults are never retried by accident.
+- withRetry backoff is fully deterministic under injection: clock, sleep, and the jitter rng are all injectable; delay = min(maxMs, baseMs·factor^(attempt-1)) blended as cap·(1-jitter)+rng()·cap·jitter (jitter clamped to [0,1]). Tests MUST inject sleep/rng — never rely on real timers.
 
 ## Config & identity
 - Resume/cursor is keyed on config `id` (defaults to the lowercased address); two runs sharing an id share AND overwrite each other's cursor — index the same contract with different variable sets only under distinct `.withId(...)`.
@@ -30,6 +33,8 @@ out for Z" knowledge that is otherwise lost in agent-driven development.
 - Absent mapping keys are stored as '' (empty string) to keep PK columns NOT NULL — scalars always use key1=key2='', so a mapping key must never legitimately be the empty string or it collides with a scalar row.
 
 ## Build & dependencies
+- resilience.ts MUST NOT import errors.ts: classification stays code/status-based so the two layers don't couple; fatality of library errors falls out of default-deny, not from type checks.
+- ContractStateError.cause is declared with `declare readonly cause?` (NOT a plain field): under useDefineForClassFields a plain field would materialize an own `cause: undefined`, making `'cause' in err` true even when none was passed — keep `declare` so the property is genuinely absent unless a cause is provided.
 - drizzle-orm must resolve to ONE deduped install shared with @subsquid/pipes (declared as its peer); that shared type identity is what lets sink.ts pass db/tables to drizzleTarget with no casts — a second copy breaks the boundary.
 - `solc` is an OPTIONAL, lazily-imported peer needed only on the source-derivation path (derived()/fromSource); inline scalar()/mapping() shapes never load it. A non-bundled solcVersion is fetched and cached under ./.solc-cache via setupMethods (not loadRemoteVersion).
 
