@@ -6,10 +6,10 @@ agent-written code without re-reading every line.
 
 ## The three artifacts
 
-1. **Structure** — `docs/context/structure/graph.json` (+ `graph.svg`).
+1. **Structure** — `docs/context/structure/graph.json` (+ `graph.mmd`).
    The dependency graph, **generated from source** by `.claude/hooks/update-structure.sh`.
-   Never edit by hand. It is regenerated every turn and `graph.json` is committed, so
-   dependency deltas show up in PR diffs. `graph.svg` is gitignored (local visualization).
+   Never edit by hand. It is regenerated every turn; both `graph.json` and the rendered
+   Mermaid `graph.mmd` are committed, so dependency deltas show up in PR diffs.
 
 2. **Data flow** — `docs/context/data-flow.mmd`.
    A Mermaid diagram of how data *actually* moves end to end. This is a **contract**:

@@ -6,3 +6,6 @@ coverage/
 *.log
 .solc-cache/
 drizzle/
+
+# Generated Typedoc API reference (run `pnpm docs:api`)
+docs/api/
