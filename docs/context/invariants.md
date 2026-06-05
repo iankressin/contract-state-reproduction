@@ -18,13 +18,21 @@ out for Z" knowledge that is otherwise lost in agent-driven development.
 - Mapping depth is capped at 2 (decoded layer); each keysFrom tuple length MUST equal the mapping's key-type count or buildTrackingContext throws.
 - decodeWord treats null/'0x' as the zero word; fixed bytesN decoding is left-aligned and supports offset 0 only (packed bytesN at a nonzero offset is unsupported).
 
+## Error contract & surfacing
+- Every error this library throws on purpose is a ContractStateError subclass (ConfigError/LayoutError/DecodingError/SinkError/PortalError) carrying a stable SCREAMING_SNAKE `code` — no bare `Error` escapes `src/` (enforce with `grep -rn "throw new Error" src` → empty); callers branch on `e.code`, never on message text, and messages are preserved verbatim so message-regex tests keep matching.
+- Error-class assignment is by FIXABILITY: user-fixable-via-config/env faults (bad address, missing portal/sink/deploy-block, unbounded collect, solc-not-installed / version-not-found, no-source-no-shape, keysFrom-on-scalar, missing keySources, key-tuple arity, duplicate variable) are ConfigError; faults intrinsic to the storage layout / solc compile are LayoutError; decode-time faults are DecodingError; sink/persistence faults are SinkError.
+- A log whose topic0 MATCHED a tracked event but then fails to decode is NEVER silently swallowed: events.ts `reader.decode` returns null ONLY for a genuine topic0 mismatch and THROWS on a real decode failure; pipeline Pass-1 surfaces the throw as strict → DecodingError(DECODE_EVENT_FAILED) vs resilient (default) → logger.warn('dropped undecodable event log') + stats.droppedLogs++ then continue. A non-matching topic0 (no tracker) is still skipped quietly with no droppedLogs.
+- The decode path takes NO non-null assertions: both decoder lookups in processBatch Pass-2 (scalar field + mapping label) are guarded — a missing decoder throws DecodingError(DECODE_MISSING_DECODER) rather than `decoders.get(x)!`.
+
 ## Reorg & failure handling
 - Reorg rollback exists ONLY in PostgresSink's Drizzle target (PK-keyed snapshot triggers); MemorySink does NO rollback, so it must stay bounded — collect() requires a `to` block and unbounded follow needs a PostgresSink.
+- PostgresSink.consume wraps `stream.pipeTo(target)` in withRetry(…, run.retry, {logger,stats,signal}): transient infra (socket/5xx/429) is retried, config/decode/abort faults stay fatal (default-deny), and a non-ContractStateError failure at the boundary is translated to SinkError(SINK_CONSUME_FAILED, {cause}). MemorySink does NOT retry — a restart would re-consume the stream and duplicate its accumulated batches.
 - withRetry (resilience.ts) rethrows the ORIGINAL error unchanged on BOTH the non-retryable and attempts-exhausted paths — it NEVER wraps; the call site is responsible for wrapping into SinkError/PortalError, and the identity rethrown on exhaustion is the LAST attempt's error.
 - defaultIsRetryable is default-DENY: retryable iff a known infra code (ECONNRESET/ECONNREFUSED/ETIMEDOUT/EAI_AGAIN/EPIPE/ENOTFOUND) OR HTTP status ≥500 or ===429; AbortError and everything else (incl. ConfigError/LayoutError/DecodingError, which carry no network code) are fatal — library faults are never retried by accident.
 - withRetry backoff is fully deterministic under injection: clock, sleep, and the jitter rng are all injectable; delay = min(maxMs, baseMs·factor^(attempt-1)) blended as cap·(1-jitter)+rng()·cap·jitter (jitter clamped to [0,1]). Tests MUST inject sleep/rng — never rely on real timers.
 
 ## Config & identity
+- Tracked-variable names must be UNIQUE within one config: resolveConfig rejects a duplicate `variable` with ConfigError(CONFIG_DUPLICATE_VARIABLE) — two specs sharing a name would otherwise silently overwrite each other in pipeline `decoders.set(p.variable, …)` (and collide in scalarSlots/mapByTopic), so the chokepoint refuses them up front.
 - Resume/cursor is keyed on config `id` (defaults to the lowercased address); two runs sharing an id share AND overwrite each other's cursor — index the same contract with different variable sets only under distinct `.withId(...)`.
 - The indexed `address` is the storage-bearing account: for proxied tokens that is the PROXY address (where the storage actually lives), not the implementation.
 
